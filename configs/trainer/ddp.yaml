@@ -1,9 +1,11 @@
 defaults:
   - default
 
-strategy: ddp
+strategy: ddp #fsddp
 
-accelerator: gpu
-devices: 4
+# gpus: auto
+accelerator: auto
+# devices: 4
 num_nodes: 1
 sync_batchnorm: True
+precision: 32

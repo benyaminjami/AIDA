@@ -7,10 +7,10 @@ wandb:
   offline: False
   id: null # pass correct id to resume experiment!
   anonymous: null # enable anonymous logging
-  project: "lightning-hydra-template"
+  project: "SUNDAE-Antibody"
   log_model: False # upload lightning ckpts
   prefix: "" # a string to put at the beginning of metric keys
   # entity: "" # set to name of your wandb team
-  group: ""
-  tags: []
+  group: ${oc.env:SLURM_JOB_ID} # set to slurm job id to group runs
+  tags: ${tags}
   job_type: ""

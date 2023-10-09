@@ -6,6 +6,8 @@ root_dir: ${oc.env:PROJECT_ROOT}
 # path to data directory
 data_dir: ${paths.root_dir}/data/
 
+slurm_dir: ${paths.root_dir}/logs/
+
 # path to logging directory
 log_dir: ${paths.root_dir}/logs/
 
@@ -13,6 +15,9 @@ log_dir: ${paths.root_dir}/logs/
 # path generation pattern is specified in `configs/hydra/default.yaml`
 # use it to store all files generated during the run, like ckpts and metrics
 output_dir: ${hydra:runtime.output_dir}
+
+# path to checkpoint directory, created dynamically by hydra
+ckpt_dir: ${paths.output_dir}/checkpoints/
 
 # path to working directory
 work_dir: ${hydra:runtime.cwd}

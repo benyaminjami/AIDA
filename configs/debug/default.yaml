@@ -7,8 +7,8 @@
 task_name: "debug"
 
 # disable callbacks and loggers during debugging
-callbacks: null
-logger: null
+callbacks: default
+logger: csv
 
 extras:
   ignore_warnings: False
@@ -33,3 +33,4 @@ trainer:
 data:
   num_workers: 0 # debuggers don't like multiprocessing
   pin_memory: False # disable gpu memory pin
+  debug: True

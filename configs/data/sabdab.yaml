@@ -1,0 +1,23 @@
+_target_: src.data.sabdab_datamodule.SAbDabDataModule
+
+data_dir: '${paths.data_dir}RAbD'
+max_length: 500 
+atoms: ['N', 'CA', 'C', 'O']
+
+# alphabet related
+alphabet:
+  encoder:
+    name: mpnn
+    featurizer: mpnn
+  decoder:
+    name: esm
+    featurizer: balm
+  
+# dataloader related
+max_tokens: 1500
+sort: true
+num_workers: 8
+pin_memory: true
+debug: False
+verbose: False
+truncate: null # TODO
