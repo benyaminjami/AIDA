@@ -10,13 +10,13 @@ import torch.nn as nn
 
 from src.utils.data_utils import Alphabet
 
-from .roberta import RobertaConfig, RobertaForMaskedLM
+from .modeling_balm import BALMForMaskedLM, EsmConfig
 
 
-class PairedBALMWithStructuralAdatper(RobertaForMaskedLM):
+class BALMWithStructuralAdatper(BALMForMaskedLM):
     @classmethod
     def from_pretrained(cls, pretrained_path, cfg):
-        balm_config = RobertaConfig.from_pretrained(pretrained_path)
+        balm_config = EsmConfig.from_pretrained(pretrained_path)
         if isinstance(cfg.balm_config.adapter_layer_indices, int):
             cfg.balm_config.adapter_layer_indices = list(
                 range(
@@ -30,24 +30,19 @@ class PairedBALMWithStructuralAdatper(RobertaForMaskedLM):
         balm_config.adapter_config = deepcopy(balm_config)
         balm_config.adapter_config.update(cfg.adapter_config)
 
-        pretrained_model = RobertaForMaskedLM.from_pretrained(
-            pretrained_path, config=balm_config
-        ).cpu()
-        alphabet = Alphabet(name="paired_balm", featurizer="balm")
+        pretrained_model = BALMForMaskedLM.from_pretrained(pretrained_path, config=balm_config)
+        alphabet = Alphabet(name="esm", featurizer="balm")
         model = cls(balm_config, alphabet)
-        model.load_state_dict(pretrained_model.state_dict(), strict=False)
+        model.load_state_dict(
+            pretrained_model.state_dict(), strict=False
+        )  # TODO change this later
 
         del pretrained_model
 
-        #  freeze pretrained parameters
-        if cfg.balm_config.freeze:
-            for pname, param in model.named_parameters():
-                # flag = True
-                # for l in cfg.balm_config.adapter_layer_indices:
-                #     if str(l) in pname:
-                #         flag = False
-                if "crossattention" not in pname:
-                    param.requires_grad = False
+        # freeze pretrained parameters
+        for pname, param in model.named_parameters():
+            if "crossattention" not in pname and "chain_embedding" not in pname:
+                param.requires_grad = False
         return model
 
     def __init__(self, config, alphabet):
@@ -61,6 +56,12 @@ class PairedBALMWithStructuralAdatper(RobertaForMaskedLM):
         self.prepend_bos = alphabet.prepend_bos
         self.append_eos = alphabet.append_eos
         self.emb_layer_norm_before = getattr(self.config, "emb_layer_norm_before", False)
+        self._init_chain_embedding()
+
+    def _init_chain_embedding(self):
+        self.chain_embedding = nn.Embedding(
+            3, self.config.hidden_size, padding_idx=0  # 0 = Pad | 1 = Light | 2 = Heavy
+        )
 
     def forward(
         self,
@@ -70,9 +71,18 @@ class PairedBALMWithStructuralAdatper(RobertaForMaskedLM):
         chain_ids: torch.Tensor,
         batch_antigen: dict,
     ):
-        result = super().forward(
+        embedding_output = self.esm.embeddings(
             input_ids=tokens,
+            position_ids=position_ids,
             attention_mask=attention_mask,
+        )
+        embedding_output = embedding_output + self.chain_embedding(chain_ids)
+        embedding_output = embedding_output * attention_mask.unsqueeze(-1).to(
+            embedding_output.dtype
+        )
+        result = super().forward(
+            attention_mask=attention_mask,
+            inputs_embeds=embedding_output,
             encoder_hidden_states=batch_antigen["feats"],
             encoder_attention_mask=batch_antigen["feats_mask"],
         )

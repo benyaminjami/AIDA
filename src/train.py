@@ -1,6 +1,6 @@
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
-import os
 import hydra
 import lightning as L
 import rootutils
@@ -9,6 +9,16 @@ from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+from src.utils import (
+    RankedLogger,
+    extras,
+    get_metric_value,
+    instantiate_callbacks,
+    instantiate_loggers,
+    log_hyperparameters,
+    task_wrapper,
+)
+
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
 # - adding project root dir to PYTHONPATH
@@ -26,16 +36,6 @@ rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # more info: https://github.com/ashleve/rootutils
 # ------------------------------------------------------------------------------------ #
 from src.utils.config import resolve_slurm_interupt
-
-from src.utils import (
-    RankedLogger,
-    extras,
-    get_metric_value,
-    instantiate_callbacks,
-    instantiate_loggers,
-    log_hyperparameters,
-    task_wrapper,
-)
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
@@ -68,9 +68,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(
-        cfg.trainer, callbacks=callbacks, logger=logger
-    )
+    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
     logger[-1].watch(model, log_freq=100)
     trainer.strategy.find_unused_parameters = True
     object_dict = {
@@ -116,7 +114,7 @@ def main(cfg: DictConfig) -> Optional[float]:
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Optional[float] with optimized metric value.
     """
-    if os.environ.get('SLURM_JOB_ID'):
+    if os.environ.get("SLURM_JOB_ID"):
         log.info(f"Slurm Job Id = {os.environ['SLURM_JOB_ID']}")
 
     resolve_slurm_interupt(cfg)

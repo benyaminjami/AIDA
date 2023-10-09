@@ -4,13 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import itertools
-from typing import Sequence, Tuple, List
-
+from typing import List, Sequence, Tuple
 
 RawMSA = Sequence[Tuple[str, str]]
 
 
-class Alphabet(object):
+class Alphabet:
     def __init__(
         self,
         standard_toks: Sequence[str],
@@ -64,11 +63,11 @@ class Alphabet(object):
         Converts a string in a sequence of tokens, using the tokenizer.
 
         Args:
-            text (:obj:`str`):
+            text (`str`):
                 The sequence to be encoded.
 
         Returns:
-            :obj:`List[str]`: The list of tokens.
+            `List[str]`: The list of tokens.
         """
 
         def split_on_token(tok, text):
@@ -115,12 +114,8 @@ class Alphabet(object):
 
             return list(
                 itertools.chain.from_iterable(
-                    (
-                        self._tokenize(token)
-                        if token not in self.unique_no_split_tokens
-                        else [token]
-                        for token in tokenized_text
-                    )
+                    self._tokenize(token) if token not in self.unique_no_split_tokens else [token]
+                    for token in tokenized_text
                 )
             )
 
@@ -188,9 +183,7 @@ class Alphabet(object):
             use_msa = False
         else:
             raise ValueError("Unknown architecture selected")
-        return cls(
-            standard_toks, prepend_toks, append_toks, prepend_bos, append_eos, use_msa
-        )
+        return cls(standard_toks, prepend_toks, append_toks, prepend_bos, append_eos, use_msa)
 
     def encode(self, text):
         return [self.get_idx(tok) for tok in self.tokenize(text)]

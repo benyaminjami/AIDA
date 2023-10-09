@@ -31,9 +31,9 @@ def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=T
 class CrossEntropyLoss(nn.CrossEntropyLoss):
     def forward(self, scores: Tensor, target: Tensor, label_mask=None, weights=None) -> Tensor:
         """
-          scores: [N, ..., C], unnormalized scores
-          target: [N, ...]
-          mask: [N, ...], where elements with `True` are allowed and `False` are masked-out
+        scores: [N, ..., C], unnormalized scores
+        target: [N, ...]
+        mask: [N, ...], where elements with `True` are allowed and `False` are masked-out
         """
 
         bsz, _ = scores.shape[0], scores.shape[-1]
@@ -70,15 +70,15 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
         ppl = torch.exp(nll_loss)
 
         logging_output = {
-            'loss': loss.data,
-            'nll_loss': nll_loss.data,
-            'ppl': ppl.data,
-            'fullseq_loss': fullseq_loss.data,
-            'fullseq_nll_loss': fullseq_nll_loss.data,
-            'bsz': bsz,
-            'sample_size': sample_size,
-            'sample_ratio': sample_size / n_tokens,
-            'nonpad_ratio': n_nonpad_tokens / n_tokens
+            "loss": loss.data,
+            "nll_loss": nll_loss.data,
+            "ppl": ppl.data,
+            "fullseq_loss": fullseq_loss.data,
+            "fullseq_nll_loss": fullseq_nll_loss.data,
+            "bsz": bsz,
+            "sample_size": sample_size,
+            "sample_ratio": sample_size / n_tokens,
+            "nonpad_ratio": n_nonpad_tokens / n_tokens,
         }
         return loss, logging_output
 
@@ -90,13 +90,13 @@ def focal_loss(probs, target, ignore_index=None, reduce=True, mu=2):
         target = target.unsqueeze(-1)
 
     nll_loss = -torch.log(probs.gather(dim=-1, index=target))
-    p_t = (1 - probs.gather(dim=-1, index=target)) 
+    p_t = 1 - probs.gather(dim=-1, index=target)
     if ignore_index is not None:
         pad_mask = target.eq(ignore_index)
         nll_loss.masked_fill_(pad_mask, 0.0)
         p_t.masked_fill_(pad_mask, 0.0)
 
-    loss = (p_t ** mu) * nll_loss
+    loss = (p_t**mu) * nll_loss
 
     if flag:
         nll_loss = nll_loss.squeeze(-1)
@@ -112,9 +112,9 @@ def focal_loss(probs, target, ignore_index=None, reduce=True, mu=2):
 class FocalLoss(nn.CrossEntropyLoss):
     def forward(self, scores: Tensor, target: Tensor, label_mask=None, weights=None) -> Tensor:
         """
-          scores: [N, ..., C], unnormalized scores
-          target: [N, ...]
-          mask: [N, ...], where elements with `True` are allowed and `False` are masked-out
+        scores: [N, ..., C], unnormalized scores
+        target: [N, ...]
+        mask: [N, ...], where elements with `True` are allowed and `False` are masked-out
         """
 
         bsz, _ = scores.shape[0], scores.shape[-1]
@@ -150,14 +150,14 @@ class FocalLoss(nn.CrossEntropyLoss):
         ppl = torch.exp(nll_loss)
 
         logging_output = {
-            'loss': loss.data,
-            'nll_loss': nll_loss.data,
-            'ppl': ppl.data,
-            'fullseq_loss': fullseq_loss.data,
-            'fullseq_nll_loss': fullseq_nll_loss.data,
-            'bsz': bsz,
-            'sample_size': sample_size,
-            'sample_ratio': sample_size / n_tokens,
-            'nonpad_ratio': n_nonpad_tokens / n_tokens
+            "loss": loss.data,
+            "nll_loss": nll_loss.data,
+            "ppl": ppl.data,
+            "fullseq_loss": fullseq_loss.data,
+            "fullseq_nll_loss": fullseq_nll_loss.data,
+            "bsz": bsz,
+            "sample_size": sample_size,
+            "sample_ratio": sample_size / n_tokens,
+            "nonpad_ratio": n_nonpad_tokens / n_tokens,
         }
         return loss, logging_output

@@ -1,16 +1,15 @@
+import re
 from typing import Sequence, Tuple
 
 import numpy as np
 import torch
-import re
 
 from src.utils.data_utils import Alphabet
 
 
-class BatchConverter(object):
-    """Callable to convert an unprocessed (labels + strings) batch to a
-    processed (labels + tensor) batch.
-    """
+class BatchConverter:
+    """Callable to convert an unprocessed (labels + strings) batch to a processed (labels + tensor)
+    batch."""
 
     def __init__(self, alphabet, truncation_seq_length: int = None):
         self.alphabet = alphabet
@@ -29,9 +28,7 @@ class BatchConverter(object):
         tokens = torch.empty(
             (
                 batch_size,
-                max_len
-                + int(self.alphabet.prepend_bos)
-                + int(self.alphabet.append_eos),
+                max_len + int(self.alphabet.prepend_bos) + int(self.alphabet.append_eos),
             ),
             dtype=torch.int64,
         )
@@ -49,8 +46,7 @@ class BatchConverter(object):
             seq = torch.tensor(seq_encoded, dtype=torch.int64)
             tokens[
                 i,
-                int(self.alphabet.prepend_bos): len(seq_encoded)
-                + int(self.alphabet.prepend_bos),
+                int(self.alphabet.prepend_bos) : len(seq_encoded) + int(self.alphabet.prepend_bos),
             ] = seq
             if self.alphabet.append_eos:
                 tokens[
@@ -156,7 +152,7 @@ class AntigenBatchConverter(BatchConverter):
         return self.__call__(raw_batch, device)
 
 
-class AntigenFeaturizer(object):
+class AntigenFeaturizer:
     def __init__(
         self,
         alphabet: Alphabet,
@@ -176,9 +172,7 @@ class AntigenFeaturizer(object):
         for entry in raw_batch:
             # [L, 3] x 4 -> [L, 4, 3]
             if isinstance(entry["coords"], dict):
-                coords.append(
-                    np.stack([entry["coords"][atom] for atom in self.atoms], 1)
-                )
+                coords.append(np.stack([entry["coords"][atom] for atom in self.atoms], 1))
             else:
                 coords.append(entry["coords"])
             seqs.append(entry["seqs"])
@@ -196,7 +190,7 @@ class AntigenFeaturizer(object):
         ) = self.batcher.from_lists(
             coords_list=coords, dists=dists, confidence_list=None, seq_list=seqs
         )
-        assert (coords.size(1) == tokens.size(1) == dists.size(1)), names
+        assert coords.size(1) == tokens.size(1) == dists.size(1), names
 
         # coord_mask = coord_mask > 0.5
         batch = {
@@ -265,7 +259,13 @@ class AntibodyBatchConverter(BatchConverter):
         return weights, chain_ids, dists, position_ids, strs, tokens, lengths, attention_mask
 
     def from_lists(
-        self, dists=None, position_ids=None, weights=None, seq_list=None, chain_ids=None, device=None
+        self,
+        dists=None,
+        position_ids=None,
+        weights=None,
+        seq_list=None,
+        chain_ids=None,
+        device=None,
     ):
         """
         Args:
@@ -293,7 +293,7 @@ class AntibodyBatchConverter(BatchConverter):
         return self.__call__(raw_batch, device)
 
 
-class AntibodyFeaturizer(object):
+class AntibodyFeaturizer:
     def __init__(
         self,
         alphabet: Alphabet,
@@ -308,12 +308,10 @@ class AntibodyFeaturizer(object):
             weights.append(self.append_chains(entry["weights"], 0, 0, 0))
             seqs.append(self.append_chains(entry["seqs"], "<eos>"))
             position_ids.append(
-                self.map_position_ids(
-                    self.append_chains(entry["position_ids"], "140", "0", "140")
-                )
+                self.map_position_ids(self.append_chains(entry["position_ids"], "140", "0", "140"))
             )
             dists.append(self.append_chains(entry["dists"], 1000, 1000, 1000))
-            chain_id = [[i+1 for _ in range(len(seq))] for i, seq in enumerate(entry["seqs"])]
+            chain_id = [[i + 1 for _ in range(len(seq))] for i, seq in enumerate(entry["seqs"])]
             chain_ids.append(self.append_chains(chain_id, 1, 0, 2))
 
         (
@@ -326,7 +324,11 @@ class AntibodyFeaturizer(object):
             lengths,
             attention_mask,
         ) = self.batcher.from_lists(
-            seq_list=seqs, weights=weights, position_ids=position_ids, dists=dists, chain_ids=chain_ids
+            seq_list=seqs,
+            weights=weights,
+            position_ids=position_ids,
+            dists=dists,
+            chain_ids=chain_ids,
         )
 
         h3_mask = ((weights == 3) & (chain_ids == 1)).ne(0)
@@ -347,13 +349,7 @@ class AntibodyFeaturizer(object):
 
     def append_chains(self, input_value, sep_value, cls_value=None, eos_value=None):
         if isinstance(input_value[0], list):
-            return (
-                [cls_value]
-                + input_value[0]
-                + [sep_value]
-                + input_value[1]
-                + [eos_value]
-            )
+            return [cls_value] + input_value[0] + [sep_value] + input_value[1] + [eos_value]
         elif isinstance(input_value[0], str):
             return input_value[0] + sep_value + input_value[1]
         else:
@@ -401,15 +397,11 @@ def collate_dense_tensors(samples, pad_v):
     """
     if len(samples) == 0:
         return torch.Tensor()
-    if len(set(x.dim() for x in samples)) != 1:
-        raise RuntimeError(
-            f"Samples has varying dimensions: {[x.dim() for x in samples]}"
-        )
-    (device,) = tuple(set(x.device for x in samples))  # assumes all on same device
+    if len({x.dim() for x in samples}) != 1:
+        raise RuntimeError(f"Samples has varying dimensions: {[x.dim() for x in samples]}")
+    (device,) = tuple({x.device for x in samples})  # assumes all on same device
     max_shape = [max(lst) for lst in zip(*[x.shape for x in samples])]
-    result = torch.empty(
-        len(samples), *max_shape, dtype=samples[0].dtype, device=device
-    )
+    result = torch.empty(len(samples), *max_shape, dtype=samples[0].dtype, device=device)
     result.fill_(pad_v)
     for i in range(len(samples)):
         result_i = result[i]
@@ -419,8 +411,8 @@ def collate_dense_tensors(samples, pad_v):
 
 
 def new_arange(x, *size):
-    """
-    Return a Tensor of `size` filled with a range function on the device of x.
+    """Return a Tensor of `size` filled with a range function on the device of x.
+
     If size is empty, using the size of the variable x.
     """
     if len(size) == 0:

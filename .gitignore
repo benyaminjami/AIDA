@@ -157,3 +157,4 @@ configs/local/default.yaml
 slurm_logs/
 checkpoints/
 .vscode/
+.github

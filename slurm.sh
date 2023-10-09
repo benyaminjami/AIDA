@@ -17,7 +17,8 @@
 #SBATCH --export=ALL
 
 ### init virtual environment if needed
-source ~/.bashrc 
+# shellcheck source=/dev/null
+source ~/.bashrc
 conda activate CBALM
 echo "Env Loaded"
 ### the command to run

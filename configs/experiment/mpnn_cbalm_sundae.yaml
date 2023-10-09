@@ -17,7 +17,7 @@ data:
     decoder:
       name: esm
       featurizer: balm
-  
+
 model:
   _target_: src.models.mpnn_cbalm.MPNNcBALM
   cfg:
@@ -32,7 +32,7 @@ model:
         encoder_hidden_size: 256
         position_embedding_type: null
         is_cross_attention: True
-      
+
 
 
 # task
@@ -40,7 +40,7 @@ task:
   _target_: src.tasks.SUNDAE.SUNDAE
   _recursive_: False
   alphabet: ${data.alphabet}
-  
+
   # model
   model: ${model}
 
@@ -50,10 +50,10 @@ task:
     noise_mask: cdr_weights
     mask_loss: True
     avg_unroll_loss: True
-    
-  generator:    
+
+  generator:
     max_iter: 5
-    strategy: denoise  
+    strategy: denoise
     tasks:
       h3:
         name: h3
@@ -67,11 +67,11 @@ task:
         name: full
         noise: full_random
     temperature: 0
-    
+
   criterion:
     _target_: src.utils.criterion.CrossEntropyLoss
     label_smoothing: 0.0
-    ignore_index: 1 
+    ignore_index: 1
 
   optimizer:
     type: adamw

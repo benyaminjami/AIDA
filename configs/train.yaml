@@ -27,7 +27,7 @@ train:
   # lightning chooses best weights based on the metric specified in checkpoint callback
   test: True
 
-  debug: True  
+  debug: True
 
   force_restart: false # force to train from scratch
   resume_slurm_id: null
@@ -37,7 +37,7 @@ train:
   lr: 1e-3 # learning rate
   monitor: ??? # name of the logged metric which determines when model is improving. Used by scheduler (plateau), checkpointer, and early stopping
   mode: ??? # "max" means higher metric value is better, can be also "min". Used by scheduler (plateau), checkpointer, and early stopping
-  patience: 10 # how many validation epochs of not improving until training stops 
+  patience: 10 # how many validation epochs of not improving until training stops
 
 
 # tags to help you identify your experiments

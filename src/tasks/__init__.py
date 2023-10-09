@@ -1,7 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
-from src.utils.optim import get_optimizer, get_scheduler
 from pytorch_lightning import LightningModule
 
 # from pytorch_lightning.utilities.types import _METRIC_COLLECTION
@@ -10,6 +9,7 @@ from torch import nn
 from torchmetrics import MaxMetric, MeanMetric, MinMetric, SumMetric
 
 from src.utils import RankedLogger
+from src.utils.optim import get_optimizer, get_scheduler
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
@@ -89,18 +89,14 @@ class TaskLitModule(LightningModule):
         return super().validation_step_end(*args, **kwargs)
 
     def on_validation_epoch_end(self, outputs: List[Any] = None):
-        logging_info = ", ".join(
-            f"{key}={val:.3f}" for key, val in self.valid_logged.items()
-        )
+        logging_info = ", ".join(f"{key}={val:.3f}" for key, val in self.valid_logged.items())
         logging_info = f"Validation Info @ (Epoch {self.current_epoch}, global step {self.global_step}): {logging_info}"
         log.info(logging_info)
 
     def test_step(self, batch: Any, batch_idx: int):
         return self.validation_step(batch, batch_idx)
 
-    def test_step_end(
-        self, *args, **kwargs
-    ) -> Optional[Union[torch.Tensor, Dict[str, Any]]]:
+    def test_step_end(self, *args, **kwargs) -> Optional[Union[torch.Tensor, Dict[str, Any]]]:
         return self.validation_step_end(*args, **kwargs)
 
     def on_test_epoch_end(self, outputs: List[Any]):
@@ -126,9 +122,7 @@ class TaskLitModule(LightningModule):
         """
         optimizer = get_optimizer(self.hparams.optimizer, self.parameters())
         if "lr_scheduler" in self.hparams and self.hparams.lr_scheduler is not None:
-            lr_scheduler, extra_kwargs = get_scheduler(
-                self.hparams.lr_scheduler, optimizer
-            )
+            lr_scheduler, extra_kwargs = get_scheduler(self.hparams.lr_scheduler, optimizer)
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {"scheduler": lr_scheduler, **extra_kwargs},
@@ -137,12 +131,8 @@ class TaskLitModule(LightningModule):
 
     # -------# Others #-------- #
     def on_train_epoch_end(self) -> None:
-        if dist.is_initialized() and hasattr(
-            self.trainer.datamodule, "train_batch_sampler"
-        ):
-            self.trainer.datamodule.train_batch_sampler.set_epoch(
-                self.current_epoch + 1
-            )
+        if dist.is_initialized() and hasattr(self.trainer.datamodule, "train_batch_sampler"):
+            self.trainer.datamodule.train_batch_sampler.set_epoch(self.current_epoch + 1)
             self.trainer.datamodule.train_batch_sampler._build_batches()
 
     def on_epoch_end(self):

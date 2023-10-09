@@ -1,6 +1,6 @@
+import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LambdaLR
-import torch
 
 
 def get_optimizer(cfg, params):
@@ -76,7 +76,7 @@ def get_scheduler(cfg, optimizer):
         raise NotImplementedError("Scheduler not supported: %s" % cfg.type)
 
 
-class BlackHole(object):
+class BlackHole:
     def __setattr__(self, name, value):
         pass
 
@@ -91,7 +91,7 @@ def inverse_sqrt_lr_schedule(step, warmup_steps, r):
     if step == 0:
         step = 1
     return warmup_steps**-0.5 * min(
-        step**(-r) * warmup_steps ** (-0.5 + r), step * warmup_steps**-1.5
+        step ** (-r) * warmup_steps ** (-0.5 + r), step * warmup_steps**-1.5
     )
 
 
@@ -106,7 +106,7 @@ class InverseSqrtLRScheduler(LambdaLR):
         rate = self.rate
 
         def lr_lambda(step):
-            return inverse_sqrt_lr_schedule(step, self.warmup_steps, rate) 
+            return inverse_sqrt_lr_schedule(step, self.warmup_steps, rate)
 
         super().__init__(optimizer, lr_lambda=lr_lambda)
 
@@ -114,9 +114,7 @@ class InverseSqrtLRScheduler(LambdaLR):
 def noam_lr_schedule(step, warmup_steps, factor, model_size):
     if step == 0:
         step = 1
-    return factor * (
-        model_size ** (-0.5) * min(step ** (-0.5), step * warmup_steps ** (-1.5))
-    )
+    return factor * (model_size ** (-0.5) * min(step ** (-0.5), step * warmup_steps ** (-1.5)))
 
 
 class NoamScheduler(LambdaLR):

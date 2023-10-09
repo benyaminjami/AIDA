@@ -2,16 +2,16 @@ import torch
 import torch.nn as nn
 
 from .features import (
-    ProteinFeatures,
-    gather_nodes,
-    cat_neighbors_nodes,
     PositionWiseFeedForward,
+    ProteinFeatures,
+    cat_neighbors_nodes,
+    gather_nodes,
 )
 
 
 class EncLayer(nn.Module):
     def __init__(self, num_hidden, num_in, dropout=0.1, num_heads=None, scale=30):
-        super(EncLayer, self).__init__()
+        super().__init__()
         self.num_hidden = num_hidden
         self.num_in = num_in
         self.scale = scale
@@ -32,7 +32,7 @@ class EncLayer(nn.Module):
         self.dense = PositionWiseFeedForward(num_hidden, num_hidden * 4)
 
     def forward(self, h_V, h_E, E_idx, mask_V=None, mask_attend=None):
-        """Parallel computation of full transformer layer"""
+        """Parallel computation of full transformer layer."""
 
         h_EV = cat_neighbors_nodes(h_V, h_E, E_idx)
         h_V_expand = h_V.unsqueeze(-2).expand(-1, -1, h_EV.size(-2), -1)
@@ -83,7 +83,7 @@ class MPNNEncoder(nn.Module):
         )
         self.W_e = nn.Linear(edge_features, hidden_dim, bias=True)
         if self.encoder_only:
-            self.W_out = nn.Linear(hidden_dim, 2*hidden_dim, bias=True)
+            self.W_out = nn.Linear(hidden_dim, 2 * hidden_dim, bias=True)
         self.token_embed = nn.Embedding(n_vocab, hidden_dim)
         # Encoder layers
         self.encoder_layers = nn.ModuleList(
@@ -106,9 +106,7 @@ class MPNNEncoder(nn.Module):
         if chain_encoding_all is None:
             chain_encoding_all = torch.ones((bsz, n_nodes)).to(device)
 
-        E, E_idx = self.features(
-            X, mask, residue_idx=residue_idx, chain_labels=chain_encoding_all
-        )
+        E, E_idx = self.features(X, mask, residue_idx=residue_idx, chain_labels=chain_encoding_all)
 
         return E, E_idx
 
@@ -121,9 +119,7 @@ class MPNNEncoder(nn.Module):
             edge_idx: [bsz, n_nodes, n_edges]
         """
         # 1. prepare edge features for protein
-        E, E_idx = self.featurize(
-            X, mask, residue_idx=residue_idx, chain_encoding_all=chain_idx
-        )
+        E, E_idx = self.featurize(X, mask, residue_idx=residue_idx, chain_encoding_all=chain_idx)
         h_E = self.W_e(E)
 
         # Encoder is unmasked self-attention

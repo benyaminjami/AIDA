@@ -60,7 +60,7 @@ class SAbDabDataModule(LightningDataModule):
                 max_length=self.hparams.max_length,
                 split=self.hparams.train_split,
                 truncate=self.hparams.truncate,
-                verbose=self.hparams.verbose
+                verbose=self.hparams.verbose,
             )
 
             self.valid_dataset, _ = SAbDab(
@@ -68,7 +68,7 @@ class SAbDabDataModule(LightningDataModule):
                 max_length=self.hparams.max_length,
                 split=self.hparams.valid_split,
                 truncate=self.hparams.truncate,
-                verbose=self.hparams.verbose
+                verbose=self.hparams.verbose,
             )
 
         self.test_dataset, _ = SAbDab(
@@ -76,7 +76,7 @@ class SAbDabDataModule(LightningDataModule):
             max_length=self.hparams.max_length,
             split=self.hparams.test_split,
             truncate=self.hparams.truncate,
-            verbose=self.hparams.verbose
+            verbose=self.hparams.verbose,
         )
 
         self.alphabet_antigen = Alphabet(**self.hparams.alphabet.encoder)
@@ -88,9 +88,8 @@ class SAbDabDataModule(LightningDataModule):
             antibody_featurizer=self.alphabet_antibody.featurizer,
         )
 
-    def _build_batch_sampler(
-        self, dataset, max_tokens, shuffle=False, distributed=True
-    ):
+    def _build_batch_sampler(self, dataset, max_tokens, shuffle=False, distributed=True):
+        # build batch sampler
         is_distributed = distributed and torch.distributed.is_initialized()
 
         batch_sampler = MaxTokensBatchSampler(
@@ -101,8 +100,7 @@ class SAbDabDataModule(LightningDataModule):
             max_tokens=max_tokens,
             sort=self.hparams.sort,
             drop_last=False,
-            sort_key=lambda i: len(dataset[i][0]["seqs"][0])
-            + len(dataset[i][0]["seqs"][1]),
+            sort_key=lambda i: len(dataset[i][0]["seqs"][0]) + len(dataset[i][0]["seqs"][1]),
         )
         return batch_sampler
 

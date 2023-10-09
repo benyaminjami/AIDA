@@ -1,6 +1,8 @@
-from omegaconf import OmegaConf
 import os
+
 import hydra
+from omegaconf import OmegaConf
+
 from src.utils import RankedLogger
 
 log = RankedLogger(__name__, rank_zero_only=True)
@@ -41,26 +43,20 @@ def resolve_slurm_interupt(cfg):
         if os.path.exists(ckpt_path):
             log.info(f"Resuming checkpoint from <{ckpt_path}>")
         else:
-            log.info(
-                f"Failed to resume checkpoint from <{ckpt_path}>: file not exists. Skip."
-            )
+            log.info(f"Failed to resume checkpoint from <{ckpt_path}>: file not exists. Skip.")
             ckpt_path = None
 
     if os.path.exists(cfg.paths.output_dir) and os.path.exists(cfg.paths.ckpt_dir):
         cfg.ckpt_path = find_last_epoch_checkpoint(cfg.paths.ckpt_dir)
         if cfg.ckpt_path:
-            log.info(
-                f"Resume from Interruption <{cfg.paths.output_dir}> <{cfg.ckpt_path}>"
-            )
+            log.info(f"Resume from Interruption <{cfg.paths.output_dir}> <{cfg.ckpt_path}>")
 
     elif cfg.train.get("resume_slurm_id") and cfg.ckpt_path is None:
         resume_slurm_id = str(cfg.train.resume_slurm_id)
         cfg.ckpt_path = find_last_epoch_checkpoint(
             os.path.join(cfg.paths.slurm_dir, resume_slurm_id, "sundae-train/checkpoints")
         )
-        log.info(
-            f"Resume from Interrupted Slurm Job <{resume_slurm_id}> <{cfg.ckpt_path}>"
-        )
+        log.info(f"Resume from Interrupted Slurm Job <{resume_slurm_id}> <{cfg.ckpt_path}>")
 
     if cfg.get("resume_slurm_id"):
         cfg.logger.wand.group = cfg.get("resume_slurm_id")
@@ -71,9 +67,7 @@ def resolve_ckpt_path(ckpt_dir, ckpt_path):
     if not os.path.isabs(ckpt_path):
         # if ckpt_path is in cwd
         if os.path.exists(os.path.join(hydra.utils.get_original_cwd(), ckpt_path)):
-            ckpt_path = os.path.abspath(
-                os.path.join(hydra.utils.get_original_cwd(), ckpt_path)
-            )
+            ckpt_path = os.path.abspath(os.path.join(hydra.utils.get_original_cwd(), ckpt_path))
 
         # or if ckpt_path is in the predefined checkpoint directory
         elif os.path.exists(os.path.join(ckpt_dir, ckpt_path)):

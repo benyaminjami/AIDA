@@ -1,11 +1,17 @@
 import os
-from typing import Dict, Any, Union, Iterable, List
-from lightning.pytorch.utilities.exceptions import MisconfigurationException
 from functools import partial
+from typing import Any, Dict, Iterable, List, Union
+
 import pytorch_lightning as pl
 import torch
-from torch import nn
+from lightning.pytorch.utilities.exceptions import MisconfigurationException
+from omegaconf import OmegaConf
 from pytorch_lightning import callbacks
+from pytorch_lightning.callbacks.progress.rich_progress import (
+    CustomProgress,
+    MetricsTextColumn,
+    RichProgressBar,
+)
 
 # from pytorch_lightning.utilities.imports import _RICH_AVAILABLE
 from pytorch_lightning.utilities.rank_zero import (
@@ -13,19 +19,11 @@ from pytorch_lightning.utilities.rank_zero import (
     rank_zero_info,
     rank_zero_warn,
 )
-from torch import Tensor
-from omegaconf import OmegaConf
-
-from src.utils import RankedLogger
-
-from pytorch_lightning.callbacks.progress.rich_progress import (
-    CustomProgress,
-    MetricsTextColumn,
-    RichProgressBar,
-)
 from rich import get_console, reconfigure
 from rich.text import Text
+from torch import Tensor, nn
 
+from src.utils import RankedLogger
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
@@ -53,9 +51,9 @@ class BetterMetricsTextColumn(MetricsTextColumn):
         if self._trainer.training and task.id not in self._tasks:
             self._tasks[task.id] = "None"
             if self._renderable_cache:
-                self._tasks[self._current_task_id] = self._renderable_cache[
-                    self._current_task_id
-                ][1]
+                self._tasks[self._current_task_id] = self._renderable_cache[self._current_task_id][
+                    1
+                ]
             self._current_task_id = task.id
         if self._trainer.training and task.id != self._current_task_id:
             return self._tasks[task.id]
@@ -74,9 +72,7 @@ class BetterRichProgressBar(RichProgressBar):
             reconfigure(**self._console_kwargs)
             self._console = get_console()
             self._console.clear_live()
-            self._metric_component = BetterMetricsTextColumn(
-                trainer, self.theme.metrics
-            )
+            self._metric_component = BetterMetricsTextColumn(trainer, self.theme.metrics)
             self.progress = CustomProgress(
                 *self.configure_columns(trainer),
                 self._metric_component,
@@ -99,10 +95,8 @@ class ValEveryNSteps(pl.Callback):
 
 
 class CheckpointEveryNSteps(pl.Callback):
-    """
-    Save a checkpoint every N steps, instead of Lightning's default that checkpoints
-    based on validation loss.
-    """
+    """Save a checkpoint every N steps, instead of Lightning's default that checkpoints based on
+    validation loss."""
 
     def __init__(
         self,
@@ -125,7 +119,7 @@ class CheckpointEveryNSteps(pl.Callback):
     def on_train_batch_end(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule, *args, **kwargs
     ):
-        """Check if we should save a checkpoint after every train batch"""
+        """Check if we should save a checkpoint after every train batch."""
         epoch = trainer.current_epoch
         global_step = trainer.global_step
         if global_step % self.save_step_frequency == 0:
@@ -152,14 +146,10 @@ class ModelCheckpoint(callbacks.ModelCheckpoint):
         filename = super()._format_checkpoint_name(
             filename, metrics, prefix, auto_insert_metric_name
         )
-        filename = filename.replace(
-            "/", "_"
-        )  # avoid '/' in filename unexpectedly creates folder
+        filename = filename.replace("/", "_")  # avoid '/' in filename unexpectedly creates folder
         return filename
 
-    def on_train_start(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
-    ) -> None:
+    def on_train_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         super().on_train_start(trainer, pl_module)
         trainer.callback_metrics[self.monitor] = self.best_model_score
 
@@ -213,9 +203,7 @@ class ModelCheckpoint(callbacks.ModelCheckpoint):
         if self.best_model_path == filepath:
             self._save_checkpoint(
                 trainer,
-                self.format_checkpoint_name(
-                    monitor_candidates, self.CHECKPOINT_NAME_BEST
-                ),
+                self.format_checkpoint_name(monitor_candidates, self.CHECKPOINT_NAME_BEST),
             )
 
         if del_filepath is not None and filepath != del_filepath:
@@ -227,9 +215,7 @@ class ModelCheckpoint(callbacks.ModelCheckpoint):
         if not self.save_last:
             return
 
-        filepath = self.format_checkpoint_name(
-            monitor_candidates, self.CHECKPOINT_NAME_LAST
-        )
+        filepath = self.format_checkpoint_name(monitor_candidates, self.CHECKPOINT_NAME_LAST)
 
         # set the last model path before saving because it will be part of the state.
         previous, self.last_model_path = self.last_model_path, filepath
@@ -276,9 +262,7 @@ class TrackNorms(pl.Callback):
 
 
 class CustomBackboneFinetuning(callbacks.BackboneFinetuning):
-    r"""
-    Replacing the backbone attribute with customizble one
-    """
+    r"""Replacing the backbone attribute with customizble one."""
 
     def __init__(
         self,
@@ -324,9 +308,7 @@ class CustomBackboneFinetuning(callbacks.BackboneFinetuning):
             obj = getattr(obj, prop)
         return obj
 
-    def on_fit_start(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
-    ) -> None:
+    def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
         """
         Raises:
             MisconfigurationException:
@@ -338,7 +320,7 @@ class CustomBackboneFinetuning(callbacks.BackboneFinetuning):
             for backbone_module_path in self.backbone_module_paths
         ):
             return super(callbacks.BackboneFinetuning, self).on_fit_start(trainer, pl_module)
-        
+
         raise MisconfigurationException(
             f"The LightningModule should have {self.backbone_module_path} attribute"
         )
@@ -412,7 +394,6 @@ class CustomBackboneFinetuning(callbacks.BackboneFinetuning):
 
         Returns:
             None
-
         """
         names = list(modules.named_modules())
         names = [m[0] for m in names if not list(m[1].children()) or m[1]._parameters]

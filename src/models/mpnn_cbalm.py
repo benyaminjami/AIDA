@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+
 from src.models.generator import sample_from_categorical
 from src.models.protein_mpnn_cmlm.protein_mpnn import ProteinMPNNCMLM, ProteinMPNNConfig
 
@@ -10,13 +11,13 @@ from .PBALM.conditional_paired_balm import PairedBALMWithStructuralAdatper
 class MPNNcBALM(nn.Module):
     def __init__(self, cfg) -> None:
         self.cfg = cfg
-        super(MPNNcBALM, self).__init__()
+        super().__init__()
         self.encoder = ProteinMPNNCMLM.from_pretrained(self.cfg.encoder)
-        if cfg.decoder.model == 'paired_balm':
+        if cfg.decoder.model == "paired_balm":
             self.decoder = PairedBALMWithStructuralAdatper.from_pretrained(
                 self.cfg.decoder.pretrained_path, cfg.decoder
             )
-        elif cfg.decoder.model == 'balm':
+        elif cfg.decoder.model == "balm":
             self.decoder = BALMWithStructuralAdatper.from_pretrained(
                 self.cfg.decoder.pretrained_path, cfg.decoder
             )
@@ -58,9 +59,9 @@ class MPNNcBALM(nn.Module):
             raise NotImplementedError
 
         if self.cfg.get("epitope_handling", "cutting") == "cutting":
-            batch_antigen["feats_mask"] = batch_antigen["coord_mask"][
-                epitope_mask
-            ].view((epitope_mask.size(0), -1))
+            batch_antigen["feats_mask"] = batch_antigen["coord_mask"][epitope_mask].view(
+                (epitope_mask.size(0), -1)
+            )
             batch_antigen["feats"] = batch_antigen["feats"][epitope_mask].view(
                 (epitope_mask.size(0), -1, 256)
             )

@@ -1,12 +1,11 @@
 import torch
+
 from src.utils.data_utils import Alphabet
 
 
 def _skeptical_unmasking(output_scores, output_masks, p):
     sorted_index = output_scores.sort(-1)[1]
-    boundary_len = (
-        (output_masks.sum(1, keepdim=True).type_as(output_scores) - 2) * p
-    ).long()
+    boundary_len = ((output_masks.sum(1, keepdim=True).type_as(output_scores) - 2) * p).long()
     # `length * p`` positions with lowest scores get kept
     skeptical_mask = new_arange(output_masks) < boundary_len
     return skeptical_mask.scatter(1, sorted_index, skeptical_mask)
@@ -17,8 +16,8 @@ def exists(obj):
 
 
 def new_arange(x, *size):
-    """
-    Return a Tensor of `size` filled with a range function on the device of x.
+    """Return a Tensor of `size` filled with a range function on the device of x.
+
     If size is empty, using the size of the variable x.
     """
     if len(size) == 0:
@@ -32,7 +31,7 @@ def maybe_remove_batch_dim(tensor):
     return tensor
 
 
-class IterativeRefinementGenerator(object):
+class IterativeRefinementGenerator:
     def __init__(
         self,
         alphabet: Alphabet = None,
@@ -59,7 +58,7 @@ class IterativeRefinementGenerator(object):
         strategy: str = None,
         temperature: float = None,
         need_attn_weights: bool = False,
-        replace_visible_tokens: bool = True
+        replace_visible_tokens: bool = True,
     ):
         alphabet = alphabet or self.alphabet
         max_iter = max_iter or self.max_iter
@@ -94,7 +93,9 @@ class IterativeRefinementGenerator(object):
                 batch_antigen=encoder_out,
                 need_attn_weights=need_attn_weights,
             )
-            output_tokens, output_scores = sample_from_categorical(decoder_out, temperature=temperature)
+            output_tokens, output_scores = sample_from_categorical(
+                decoder_out, temperature=temperature
+            )
 
             # 2.2: re-mask skeptical parts of low confidence
             # skeptical decoding (depend on the maximum decoding steps.)
@@ -112,9 +113,7 @@ class IterativeRefinementGenerator(object):
             if replace_visible_tokens:
                 visible_token_mask = ~batch_antibody["prev_token_mask"]
                 visible_tokens = batch_antibody["prev_tokens"]
-                output_tokens = torch.where(
-                    visible_token_mask, visible_tokens, output_tokens
-                )
+                output_tokens = torch.where(visible_token_mask, visible_tokens, output_tokens)
 
             # if need_attn_weights:
             #     attns.append(
@@ -125,7 +124,7 @@ class IterativeRefinementGenerator(object):
             #         )
             #     ) TODO: add attention weights
 
-            decoder_info['history'].append(output_tokens.clone())
+            decoder_info["history"].append(output_tokens.clone())
             decoder_info.update(step=step + 1)
 
         if need_attn_weights:

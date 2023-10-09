@@ -1,5 +1,5 @@
 import heapq
-from typing import (Any, Callable, Iterator, List, TypeVar,)
+from typing import Any, Callable, Iterator, List, TypeVar
 
 import numpy as np
 import torch
@@ -8,28 +8,49 @@ from torch import distributed as dist
 from torch.utils.data import DataChunk
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data.sampler import BatchSampler, SequentialSampler
+
 from . import esm
 
 
-class Alphabet(object):
-    def __init__(self, name='esm', featurizer='mpnn', alphabet_cfg={}, featurizer_cfg={}):
+class Alphabet:
+    def __init__(self, name="esm", featurizer="mpnn", alphabet_cfg={}, featurizer_cfg={}):
         self.name = name
         self._alphabet = None
 
-        if name == 'esm':
-            self._alphabet = self._alphabet = esm.Alphabet.from_architecture('ESM-1b')
+        if name == "esm":
+            self._alphabet = self._alphabet = esm.Alphabet.from_architecture("ESM-1b")
             self.add_special_tokens = True
-        elif name == 'paired_balm':
-            self._alphabet = self._alphabet = esm.Alphabet.from_architecture('paired_balm')
+        elif name == "paired_balm":
+            self._alphabet = self._alphabet = esm.Alphabet.from_architecture("paired_balm")
             self.add_special_tokens = True
-        elif name == 'mpnn':
+        elif name == "mpnn":
             self._alphabet = esm.Alphabet(
-                standard_toks=['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I',
-                               'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V'],
+                standard_toks=[
+                    "A",
+                    "R",
+                    "N",
+                    "D",
+                    "C",
+                    "Q",
+                    "E",
+                    "G",
+                    "H",
+                    "I",
+                    "L",
+                    "K",
+                    "M",
+                    "F",
+                    "P",
+                    "S",
+                    "T",
+                    "W",
+                    "Y",
+                    "V",
+                ],
                 prepend_toks=["<pad>", "<unk>"],
                 append_toks=[],
                 prepend_bos=False,
-                append_eos=False
+                append_eos=False,
             )
         else:
             raise
@@ -45,14 +66,15 @@ class Alphabet(object):
     def __len__(self):
         return len(self._alphabet)
 
-    def get_featurizer(self, name='cath', **kwds):
-        if name == 'balm':
+    def get_featurizer(self, name="cath", **kwds):
+        if name == "balm":
             from src.data.datasets.balm_batcher import AntibodyFeaturizer as Featurizer
+
             return Featurizer(alphabet=self)
-        elif name == 'mpnn':
+        elif name == "mpnn":
             from src.data.datasets.mpnn_batcher import AntigenFeaturizer as Featurizer
-            return Featurizer(alphabet=self,
-                              coord_nan_to_zero=kwds.get('coord_nan_to_zero', True))
+
+            return Featurizer(alphabet=self, coord_nan_to_zero=kwds.get("coord_nan_to_zero", True))
 
     @property
     def featurizer(self):
@@ -61,18 +83,20 @@ class Alphabet(object):
     def featurize(self, raw_batch, **kwds):
         return self._featurizer(raw_batch, **kwds)
 
-    def decode(self, batch_ids, return_as='str', remove_special=False):
+    def decode(self, batch_ids, return_as="str", remove_special=False):
         ret = []
         for ids in batch_ids.cpu():
-            if return_as == 'str':
-                line = ''.join([self.get_tok(id) for id in ids])
+            if return_as == "str":
+                line = "".join([self.get_tok(id) for id in ids])
                 if remove_special:
-                    line = line.replace(self.get_tok(self.mask_idx), '_') \
-                        .replace(self.get_tok(self.eos_idx), '') \
-                        .replace(self.get_tok(self.cls_idx), '') \
-                        .replace(self.get_tok(self.padding_idx), '') \
-                        .replace(self.get_tok(self.unk_idx), '-')
-            elif return_as == 'list':
+                    line = (
+                        line.replace(self.get_tok(self.mask_idx), "_")
+                        .replace(self.get_tok(self.eos_idx), "")
+                        .replace(self.get_tok(self.cls_idx), "")
+                        .replace(self.get_tok(self.padding_idx), "")
+                        .replace(self.get_tok(self.unk_idx), "-")
+                    )
+            elif return_as == "list":
                 line = [self.get_tok(id) for id in ids]
             ret.append(line)
         return ret
@@ -97,9 +121,9 @@ class MaxTokensBatchSampler(BatchSampler):
         sort=False,
         buffer_size_multiplier=100,
         seed=42,
-        shuffle=True
+        shuffle=True,
     ):
-        self.distibuted = distributed
+        self.distributed = distributed
         if distributed:
             sampler = DistributedSampler(dataset, shuffle=shuffle)
         else:
@@ -177,7 +201,7 @@ class MaxTokensBatchSampler(BatchSampler):
 
         # 6) carefully deal with DDP, ensuring that every worker
         #      has the same number of batches
-        if self.distibuted:
+        if self.distributed:
             num_samples = torch.tensor(len(bucket_batches)).to(self.sampler.rank)
             dist.all_reduce(num_samples, op=dist.ReduceOp.MAX)
             num_samples = num_samples.item()
@@ -190,5 +214,5 @@ class MaxTokensBatchSampler(BatchSampler):
 
     def set_epoch(self, epoch):
         self._epoch = epoch
-        if self.distibuted:
+        if self.distributed:
             self.sampler.set_epoch(epoch)

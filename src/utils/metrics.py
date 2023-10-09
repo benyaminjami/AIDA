@@ -1,12 +1,10 @@
-import torch
 import numpy as np
+import torch
 
 
 def luost_rmsd(res_list1: list, res_list2: list):
     res_short, res_long = (
-        (res_list1, res_list1)
-        if len(res_list1) < len(res_list2)
-        else (res_list2, res_list1)
+        (res_list1, res_list1) if len(res_list1) < len(res_list2) else (res_list2, res_list1)
     )
     M, N = len(res_short), len(res_long)
 

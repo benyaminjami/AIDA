@@ -1,14 +1,14 @@
+import numpy as np
 import torch
 import torch.functional as F
 from torch import nn
-import numpy as np
 
-from .features import cat_neighbors_nodes, PositionWiseFeedForward
+from .features import PositionWiseFeedForward, cat_neighbors_nodes
 
 
 def new_arange(x, *size):
-    """
-    Return a Tensor of `size` filled with a range function on the device of x.
+    """Return a Tensor of `size` filled with a range function on the device of x.
+
     If size is empty, using the size of the variable x.
     """
     if len(size) == 0:
@@ -18,9 +18,7 @@ def new_arange(x, *size):
 
 def _skeptical_unmasking(output_scores, output_masks, p):
     sorted_index = output_scores.sort(-1)[1]
-    boundary_len = (
-        (output_masks.sum(1, keepdim=True).type_as(output_scores) - 2) * p
-    ).long()
+    boundary_len = ((output_masks.sum(1, keepdim=True).type_as(output_scores) - 2) * p).long()
     # `length * p`` positions with lowest scores get kept
     skeptical_mask = new_arange(output_masks) < boundary_len
     return skeptical_mask.scatter(1, sorted_index, skeptical_mask)
@@ -36,9 +34,7 @@ def get_neighbors(self, X, mask, top_k=5, eps=1e-6):
     D = mask_2D * torch.sqrt(torch.sum(dX**2, 3) + eps)
     D_max, _ = torch.max(D, -1, keepdim=True)
     D_adjust = D + (1.0 - mask_2D) * D_max
-    D_neighbors, E_idx = torch.topk(
-        D_adjust, np.minimum(top_k, X.shape[1]), dim=-1, largest=False
-    )
+    D_neighbors, E_idx = torch.topk(D_adjust, np.minimum(top_k, X.shape[1]), dim=-1, largest=False)
     return D_neighbors, E_idx
 
 
@@ -58,7 +54,7 @@ def convert_neighbors_to_binary_edges(edge_idx):
 
 class DecLayer(nn.Module):
     def __init__(self, num_hidden, num_in, dropout=0.1, num_heads=None, scale=30):
-        super(DecLayer, self).__init__()
+        super().__init__()
         self.num_hidden = num_hidden
         self.num_in = num_in
         self.scale = scale
@@ -74,7 +70,7 @@ class DecLayer(nn.Module):
         self.dense = PositionWiseFeedForward(num_hidden, num_hidden * 4)
 
     def forward(self, h_V, h_E, mask_V=None, mask_attend=None):
-        """Parallel computation of full transformer layer"""
+        """Parallel computation of full transformer layer."""
 
         # Concatenate h_V_i to h_E_ij
         h_V_expand = h_V.unsqueeze(-2).expand(-1, -1, h_E.size(-2), -1)
@@ -135,9 +131,7 @@ class MPNNDecoder(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def _prepare_decoding_order(
-        self, mask, E_idx, chain_mask=None, decoding_order=None
-    ):
+    def _prepare_decoding_order(self, mask, E_idx, chain_mask=None, decoding_order=None):
         device = mask.device
 
         if chain_mask is None:
@@ -195,7 +189,9 @@ class MPNNDecoder(nn.Module):
         h_ES = cat_neighbors_nodes(h_S, h_E, E_idx)
 
         # Build encoder embeddings
-        h_EX_encoder = cat_neighbors_nodes(torch.zeros_like(h_S), h_E, E_idx)  # TODO: change this for test
+        h_EX_encoder = cat_neighbors_nodes(
+            torch.zeros_like(h_S), h_E, E_idx
+        )  # TODO: change this for test
         h_EXV_encoder = cat_neighbors_nodes(h_V, h_EX_encoder, E_idx)
 
         return h_ES, h_EXV_encoder
@@ -210,9 +206,7 @@ class MPNNDecoder(nn.Module):
         )
 
         # get preprocessed structure features
-        h_ES, h_EXV_encoder = self._preprocess_structure_feats(
-            h_S, h_V, h_E, E_idx, mask
-        )
+        h_ES, h_EXV_encoder = self._preprocess_structure_feats(h_S, h_V, h_E, E_idx, mask)
 
         # h_EXV_encoder: [bsz, n_nodes, n_edges, d_edges],
         # node's neighbor features from graph encoder, without sequence informed
@@ -240,7 +234,6 @@ class MPNNDecoder(nn.Module):
         decoding_order=None,
         temperature=1e-2,
     ):
-
         h_V_t = self.forward(h_S, h_V, h_E, E_idx, mask)
 
         logits = self.out_proj(h_V_t)
@@ -277,14 +270,11 @@ class MPNNDecoder(nn.Module):
         )
 
         # log_probs = torch.zeros((N_batch, N_nodes, 22), device=device)
-        all_probs = torch.zeros(
-            (N_batch, N_nodes, 22), device=device, dtype=torch.float32
-        )
+        all_probs = torch.zeros((N_batch, N_nodes, 22), device=device, dtype=torch.float32)
         h_S = torch.zeros_like(h_V, device=device)
         S = torch.zeros((N_batch, N_nodes), dtype=torch.int64, device=device)
         h_V_stack = [h_V] + [
-            torch.zeros_like(h_V, device=device)
-            for _ in range(len(self.decoder_layers))
+            torch.zeros_like(h_V, device=device) for _ in range(len(self.decoder_layers))
         ]
 
         # constant, constant_bias = torch.zeros_like(all_probs)
@@ -302,9 +292,7 @@ class MPNNDecoder(nn.Module):
             chain_mask_gathered = torch.gather(chain_mask, 1, t[:, None])  # [B]
 
             # Hidden layers
-            E_idx_t = torch.gather(
-                E_idx, 1, t[:, None, None].repeat(1, 1, E_idx.shape[-1])
-            )
+            E_idx_t = torch.gather(E_idx, 1, t[:, None, None].repeat(1, 1, E_idx.shape[-1]))
             h_E_t = torch.gather(
                 h_E,
                 1,
@@ -319,26 +307,24 @@ class MPNNDecoder(nn.Module):
                 ),
             )
             mask_t = torch.gather(mask, 1, t[:, None])
-            for l, layer in enumerate(self.decoder_layers):
+            for i, layer in enumerate(self.decoder_layers):
                 # Updated relational features for future states
-                h_ESV_decoder_t = cat_neighbors_nodes(h_V_stack[l], h_ES_t, E_idx_t)
+                h_ESV_decoder_t = cat_neighbors_nodes(h_V_stack[i], h_ES_t, E_idx_t)
                 h_V_t = torch.gather(
-                    h_V_stack[l],
+                    h_V_stack[i],
                     1,
-                    t[:, None, None].repeat(1, 1, h_V_stack[l].shape[-1]),
+                    t[:, None, None].repeat(1, 1, h_V_stack[i].shape[-1]),
                 )
                 h_ESV_t = (
                     torch.gather(
                         mask_bw,
                         1,
-                        t[:, None, None, None].repeat(
-                            1, 1, mask_bw.shape[-2], mask_bw.shape[-1]
-                        ),
+                        t[:, None, None, None].repeat(1, 1, mask_bw.shape[-2], mask_bw.shape[-1]),
                     )
                     * h_ESV_decoder_t
                     + h_EXV_encoder_t
                 )
-                h_V_stack[l + 1].scatter_(
+                h_V_stack[i + 1].scatter_(
                     1,
                     t[:, None, None].repeat(1, 1, h_V.shape[-1]),
                     layer(h_V_t, h_ESV_t, mask_V=mask_t),  # layer update
@@ -465,7 +451,7 @@ class MPNNSequenceDecoder(SequenceDecoder):
 
         if crf:
             from torch_random_fields.models import GeneralCRF
-            from torch_random_fields.models.constants import Training, Inference
+            from torch_random_fields.models.constants import Inference, Training
 
             self.crf = GeneralCRF(
                 num_states=n_vocab,
@@ -489,9 +475,7 @@ class MPNNSequenceDecoder(SequenceDecoder):
         decoding=False,
     ):
         # max_binary_edges = 5
-        if (
-            max_binary_edges
-        ):  # cut-off neighbors for (possibly) more accurate PGM estimate
+        if max_binary_edges:  # cut-off neighbors for (possibly) more accurate PGM estimate
             edge_idx = edge_idx[:, :max_binary_edges]
 
         binary_edges, binary_masks = convert_neighbors_to_binary_edges(edge_idx)

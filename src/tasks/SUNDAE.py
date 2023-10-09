@@ -1,19 +1,20 @@
 import os
 from typing import Any, List, Union
-import torch
+
 import hydra
-from omegaconf import OmegaConf
-from src.utils import metrics, RankedLogger
-from src.tasks import TaskLitModule
-from src.utils.data_utils import Alphabet
+import torch
+from omegaconf import DictConfig, OmegaConf
+from torch import nn
+from torchmetrics import CatMetric, MaxMetric, MeanMetric, MinMetric, SumMetric
+
 from src.models.generator import IterativeRefinementGenerator
 from src.models.mpnn_cbalm import MPNNcBALM
+from src.tasks import TaskLitModule
+from src.utils import RankedLogger, metrics
+from src.utils.data_utils import Alphabet
 
 # from byprot.utils.config import compose_config as Cfg, merge_config
 
-from omegaconf import DictConfig
-from torch import nn
-from torchmetrics import CatMetric, MaxMetric, MeanMetric, MinMetric, SumMetric
 
 # from byprot.datamodules.datasets.data_utils import Alphabet
 
@@ -52,9 +53,7 @@ class SUNDAE(TaskLitModule):
         super().setup(stage)
 
         self.build_criterion()
-        self.metrics = nn.ModuleList(
-            [self.build_torchmetric(), self.build_torchmetric()]
-        )
+        self.metrics = nn.ModuleList([self.build_torchmetric(), self.build_torchmetric()])
 
         if self.stage == "fit":
             log.info(f"\n{self.model}")
@@ -128,9 +127,7 @@ class SUNDAE(TaskLitModule):
             )
 
         def _selected_random(target_tokens):
-            target_masks = (
-                target_tokens.ne(padding_idx) & attention_mask & sel_mask.ne(0)
-            )
+            target_masks = target_tokens.ne(padding_idx) & attention_mask & sel_mask.ne(0)
             random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
             return (
                 target_masks * random_text + ~target_masks * target_tokens,
@@ -141,22 +138,16 @@ class SUNDAE(TaskLitModule):
             target_masks = target_tokens.ne(padding_idx) & attention_mask
             corruption_prob_per_sequence = torch.rand((target_tokens.shape[0], 1))
             rand = torch.rand(target_tokens.shape)
-            mask = (rand < corruption_prob_per_sequence).to(
-                target_tokens.device
-            ) & target_masks
+            mask = (rand < corruption_prob_per_sequence).to(target_tokens.device) & target_masks
 
             random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
             return mask * random_text + ~mask * target_tokens, mask
 
         def _selected_sundae(target_tokens):
-            target_masks = (
-                target_tokens.ne(padding_idx) & attention_mask & sel_mask.ne(0)
-            )
+            target_masks = target_tokens.ne(padding_idx) & attention_mask & sel_mask.ne(0)
             corruption_prob_per_sequence = torch.rand((target_tokens.shape[0], 1))
             rand = torch.rand(target_tokens.shape)
-            mask = (rand < corruption_prob_per_sequence).to(
-                target_tokens.device
-            ) & target_masks
+            mask = (rand < corruption_prob_per_sequence).to(target_tokens.device) & target_masks
 
             random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
             return mask * random_text + ~mask * target_tokens, mask
@@ -168,9 +159,7 @@ class SUNDAE(TaskLitModule):
             )
             rand = torch.rand(target_tokens.shape).to(target_tokens.device)
             rand = rand - sel_mask * sel_mask_add_prob
-            mask = (rand < corruption_prob_per_sequence).to(
-                target_tokens.device
-            ) & target_masks
+            mask = (rand < corruption_prob_per_sequence).to(target_tokens.device) & target_masks
 
             random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
             return mask * random_text + ~mask * target_tokens, mask
@@ -250,9 +239,7 @@ class SUNDAE(TaskLitModule):
         )
 
         # log train metrics
-        self.log(
-            "global_step", self.global_step, on_step=True, on_epoch=False, prog_bar=True
-        )
+        self.log("global_step", self.global_step, on_step=True, on_epoch=False, prog_bar=True)
         self.log("lr", self.lrate, on_step=True, on_epoch=False, prog_bar=True)
 
         for log_key in logging_output:
@@ -379,9 +366,7 @@ class SUNDAE(TaskLitModule):
     ) -> Any:
         tokens = batch["antibody"]["tokens"]
 
-        contact_mask = batch["antibody"]["h3_mask"].ne(0) & (
-            batch["antibody"]["dists"] < 6.6
-        )
+        contact_mask = batch["antibody"]["h3_mask"].ne(0) & (batch["antibody"]["dists"] < 6.6)
 
         results = {
             "pred_tokens": {},
@@ -405,17 +390,11 @@ class SUNDAE(TaskLitModule):
                 recovery_acc_per_sample = metrics.accuracy_per_sample(
                     pred_tokens,
                     tokens,
-                    mask=batch["antibody"].get(
-                        self.hparams.generator.tasks[task].get("mask")
-                    ),
+                    mask=batch["antibody"].get(self.hparams.generator.tasks[task].get("mask")),
                 )
-                self.metrics[dataloader_idx][f"{task}_acc_median"].update(
-                    recovery_acc_per_sample
-                )
+                self.metrics[dataloader_idx][f"{task}_acc_median"].update(recovery_acc_per_sample)
 
-                self.metrics[dataloader_idx][f"{task}_acc"].update(
-                    recovery_acc_per_sample
-                )
+                self.metrics[dataloader_idx][f"{task}_acc"].update(recovery_acc_per_sample)
                 if task == "h3":
                     recovery_contact_acc_per_sample = metrics.accuracy_per_sample(
                         pred_tokens, tokens, mask=contact_mask
@@ -436,9 +415,7 @@ class SUNDAE(TaskLitModule):
 
             count = self.metrics[i]["count"].compute()
             self.metrics[i]["count"].reset()
-            self.log(
-                f"{log_key}/count", count, on_step=False, on_epoch=True, prog_bar=True
-            )
+            self.log(f"{log_key}/count", count, on_step=False, on_epoch=True, prog_bar=True)
 
             for task in self.hparams.generator.tasks:
                 if task == "h3":
@@ -462,9 +439,7 @@ class SUNDAE(TaskLitModule):
                     prog_bar=True,
                 )
 
-                acc_median = (
-                    torch.median(self.metrics[i][f"{task}_acc_median"].compute()) * 100
-                )
+                acc_median = torch.median(self.metrics[i][f"{task}_acc_median"].compute()) * 100
                 self.metrics[i][f"{task}_acc_median"].reset()
                 self.log(
                     f"{log_key}/{task}_acc_median",
@@ -511,9 +486,7 @@ class SUNDAE(TaskLitModule):
                     "recovery": recovery,
                 }
                 if saveto:
-                    fp.write(
-                        f">name={name} | L={len(prediction['h3'])} | AAR={recovery:.2f}\n"
-                    )
+                    fp.write(f">name={name} | L={len(prediction['h3'])} | AAR={recovery:.2f}\n")
                     fp.write(f"h3: \t {prediction['h3']}\n")
                     fp.write(f"cdr: \t {prediction['cdr']}\n")
                     fp.write(f"full: \t {prediction['full']}\n\n")

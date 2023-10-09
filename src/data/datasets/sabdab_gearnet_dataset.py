@@ -19,16 +19,11 @@ def SAbDab(
     alphabet="ACDEFGHIKLMNPQRSTVWY",
     verbose=False,
 ):
-    alphabet_set = set([a for a in alphabet])
+    alphabet_set = {a for a in alphabet}
     ab_path = os.path.join(root, f"{split}.ab-ag.ab.json")
     ag_path = os.path.join(root, f"{split}.ab-ag.ag.json")
 
-    discard_count = {
-        "bad_chars": 0,
-        "too_long": 0,
-        "no_coords": 0,
-        "repeat": 0
-    }
+    discard_count = {"bad_chars": 0, "too_long": 0, "no_coords": 0, "repeat": 0}
     repeat_checker = []
     # 1) load the dataset
     with open(ab_path) as f_ab, open(ag_path) as f_ag:
@@ -42,10 +37,10 @@ def SAbDab(
             ag_entry = json.loads(ag_line)
             name = ab_entry["pdb"]
 
-            if ag_entry['coords'] == []:
+            if ag_entry["coords"] == []:
                 if verbose:
-                    print(name, 'No coords')
-                discard_count['no_coords'] += 1
+                    print(name, "No coords")
+                discard_count["no_coords"] += 1
                 continue
 
             select_antigen_chain(ag_entry)
@@ -53,7 +48,7 @@ def SAbDab(
                 select_antigen_contact_range(ag_entry, max_length)
 
             # Place the light chain after the heavy chain
-            for key in ['dists', 'seqs', 'position_ids', 'weights']:
+            for key in ["dists", "seqs", "position_ids", "weights"]:
                 ab_entry[key] = [ab_entry[key][1], ab_entry[key][0]]
 
             ab_seqs = ab_entry["seqs"]
@@ -65,19 +60,20 @@ def SAbDab(
 
             # Check if in alphabet
             bad_chars = set(
-                [s for seq in ab_seqs for s in seq]
-                + [s for seq in ag_seqs for s in seq]
+                [s for seq in ab_seqs for s in seq] + [s for seq in ag_seqs for s in seq]
             ).difference(alphabet_set)
 
             if len(bad_chars) == 0:
-                if (ab_entry['pdb'], ab_entry['seqs'][1], ab_entry['seqs'][0]) in repeat_checker:
-                    discard_count['repeat'] += 1
+                if (ab_entry["pdb"], ab_entry["seqs"][1], ab_entry["seqs"][0]) in repeat_checker:
+                    discard_count["repeat"] += 1
                 elif (
                     len(ag_entry["seqs"]) <= max_length
                     and len(ab_entry["seqs"][0]) + len(ab_entry["seqs"][1]) < 2 * 168
                 ):  # TODO clean this part
                     dataset.append((ab_entry, ag_entry))
-                    repeat_checker.append((ab_entry['pdb'], ab_entry['seqs'][1], ab_entry['seqs'][0]))
+                    repeat_checker.append(
+                        (ab_entry["pdb"], ab_entry["seqs"][1], ab_entry["seqs"][0])
+                    )
                 else:
                     discard_count["too_long"] += 1
             else:
@@ -88,16 +84,14 @@ def SAbDab(
                 discard_count["bad_chars"] += 1
 
             if verbose and (i + 1) % 100000 == 0:
-                print("{} entries ({} loaded)".format(len(dataset), i + 1))
+                print(f"{len(dataset)} entries ({i + 1} loaded)")
 
             # Truncate early
             if truncate is not None and len(dataset) == truncate:
                 break
         total_size = i
 
-        log.info(
-            f"Loaded data size: {len(dataset)}/{total_size}. Discarded: {discard_count}."
-        )
+        log.info(f"Loaded data size: {len(dataset)}/{total_size}. Discarded: {discard_count}.")
 
         return dataset, alphabet_set
 
@@ -116,18 +110,18 @@ def check_lens(ab_entry, ag_entry):
         == len(ab_entry["dists"][1])
     ), "Mismatch length in Heavy chain"
     assert (
-        len(ag_entry['seqs'])
-        == len(ag_entry['dists'])
-        == len(ag_entry["coords"]['N'])
-        == len(ag_entry["coords"]['CA'])
-        == len(ag_entry["coords"]['C'])
-        == len(ag_entry["coords"]['O'])
+        len(ag_entry["seqs"])
+        == len(ag_entry["dists"])
+        == len(ag_entry["coords"]["N"])
+        == len(ag_entry["coords"]["CA"])
+        == len(ag_entry["coords"]["C"])
+        == len(ag_entry["coords"]["O"])
     ), "Mismatch length in Antigen chain"
 
 
 def select_antigen_chain(entry):
     contacted_chain_idx = np.array(
-        list((map(sum, map(lambda x: x < 8, (map(np.array, entry["dists"]))))))
+        list(map(sum, map(lambda x: x < 8, (map(np.array, entry["dists"])))))
     ).argmax()
     del entry["pdb_data_path"]
     for key, values in entry.items():
