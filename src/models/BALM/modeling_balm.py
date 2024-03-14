@@ -14,7 +14,6 @@
 """PyTorch ESM model."""
 
 import math
-from copy import deepcopy
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -87,20 +86,19 @@ class RotaryEmbedding(torch.nn.Module):
         inv_freq = inv_freq
         self.register_buffer("inv_freq", inv_freq)
 
-        self._seq_len_cached = None
+        self._seq_len_cached = 0
         self._cos_cached = None
         self._sin_cached = None
+        self._update_cos_sin_tables(168, -2)
 
-    def _update_cos_sin_tables(self, x, seq_dimension=2):
-        seq_len = x.shape[seq_dimension]
-
+    def _update_cos_sin_tables(self, seq_len, seq_dimension=2):
         # Reset the tables if the sequence length has changed,
         # or if we're on a new device (possibly due to tracing for instance)
-        if seq_len != self._seq_len_cached or self._cos_cached.device != x.device:
+        if seq_len > self._seq_len_cached:
             self._seq_len_cached = seq_len
-            t = torch.arange(x.shape[seq_dimension], device=x.device).type_as(self.inv_freq)
+            t = torch.arange(seq_len).type_as(self.inv_freq)
             freqs = torch.outer(t, self.inv_freq)
-            emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
+            emb = torch.cat((freqs, freqs), dim=-1)
 
             self._cos_cached = emb.cos()[None, None, :, :]
             self._sin_cached = emb.sin()[None, None, :, :]
@@ -108,7 +106,11 @@ class RotaryEmbedding(torch.nn.Module):
         return self._cos_cached, self._sin_cached
 
     def forward(self, q: torch.Tensor, k: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        self._cos_cached, self._sin_cached = self._update_cos_sin_tables(k, seq_dimension=-2)
+        seq_len = k.shape[-2]
+        if self._cos_cached.device != k.device:
+            self._cos_cached = self._cos_cached.to(k.device)
+            self._sin_cached = self._sin_cached.to(k.device)
+        self._cos_cached, self._sin_cached = self._update_cos_sin_tables(seq_len, seq_dimension=-2)
 
         return (
             apply_rotary_pos_emb(q, self._cos_cached, self._sin_cached),
@@ -391,6 +393,9 @@ class BALMSelfOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        if config.is_cross_attention and config.zeroing_feed_forward:
+            self.dense.weight.data.zero_()
+
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states, input_tensor):
@@ -487,8 +492,8 @@ class BALMLayer(nn.Module):
         self.is_decoder = config.is_decoder
         self.add_cross_attention = add_cross_attention
         if self.add_cross_attention:
-            if not self.is_decoder:
-                print("Initialized adapter layer")
+            # if not self.is_decoder:
+            # print("Initialized adapter layer")
             self.crossattention = BALMAttention(config.adapter_config)
         self.intermediate = BALMIntermediate(config)
         self.output = BALMOutput(config)
@@ -698,7 +703,10 @@ class BALMPreTrainedModel(PreTrainedModel):
         if isinstance(module, nn.Linear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.weight.data.sum() == 0:
+                pass
+            else:
+                module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
@@ -923,8 +931,7 @@ class BALMModel(BALMPreTrainedModel):
                 encoder_attention_mask = torch.ones(encoder_hidden_shape, device=device)
             encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
         else:
-            encoder_extended_attention_mask = None
-
+            encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
         # Prepare head mask if needed
         # 1.0 in head_mask indicate we keep the head
         # attention_probs has shape bsz x n_heads x N x N

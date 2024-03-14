@@ -5,7 +5,6 @@ from pathlib import Path
 import torch
 from omegaconf import OmegaConf
 
-from src.models.generator import sample_from_categorical
 from src.models.protein_mpnn_cmlm import FixedBackboneDesignEncoderDecoder
 
 from .decoder import MPNNSequenceDecoder
@@ -46,9 +45,9 @@ class ProteinMPNNCMLM(FixedBackboneDesignEncoderDecoder):
         model = cls(model_cfg)
         state_dict = torch.load(str(ckpt_path))["state_dict"]
         state_dict = {key.replace("model.", ""): value for key, value in state_dict.items()}
-        state_dict.pop("decoder.out_proj.weight")
-        state_dict.pop("decoder.out_proj.bias")
-        model.load_state_dict(state_dict, strict=False)
+        # state_dict.pop("decoder.out_proj.weight")
+        # state_dict.pop("decoder.out_proj.bias")
+        model.load_state_dict(state_dict)
         return model
 
     def __init__(self, cfg=OmegaConf.create()) -> None:

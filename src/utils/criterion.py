@@ -64,6 +64,12 @@ class CrossEntropyLoss(nn.CrossEntropyLoss):
             sample_size = label_mask.sum()  # sample size should be set to valid coordinates
             loss = (loss * label_mask).sum() / sample_size
             nll_loss = (nll_loss * label_mask).sum() / sample_size
+            # label_mask = label_mask.float()
+            # sample_size = label_mask.sum(-1)  # sample size should be set to valid coordinates
+            # loss = (loss * label_mask).sum(-1) / sample_size
+            # loss = loss.sum() / sample_size.size(0)
+            # nll_loss = (nll_loss * label_mask).sum(-1) / sample_size
+            # nll_loss = nll_loss.sum() / sample_size.size(0
         else:
             loss, nll_loss = fullseq_loss, fullseq_nll_loss
 

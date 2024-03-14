@@ -3,37 +3,45 @@
 # to execute this experiment run:
 
 defaults:
-  - /data: sabdab
+  - /data: skempi
   - /trainer: default
 
 # name of the run determines folder name in logs
-task_name: "sundae-train"
+task_name: "cmlm-train"
 
 data:
+  gearnet: true
+  max_tokens: 3500
+  mode: h* #hl h* h
   alphabet:
     encoder:
-      name: mpnn
-      featurizer: mpnn
+      name: gearnet
+      featurizer: gearnet
     decoder:
       name: esm
       featurizer: balm
 
 model:
-  _target_: src.models.mpnn_cbalm.MPNNcBALM
+  _target_: src.models.gearnet_cbalm.GearNetcBALM
   cfg:
+    epitope_handling: null
     encoder:
-      pretrained_path: ${paths.data_dir}/pretrained_models/pretrained-mpnn
+      pretrained_path: ${paths.data_dir}/pretrained_models/pretrained_gearnet
+      fuse_esm: False
+      use_adapter: False
     decoder:
+      freeze_pretrained: True
+      mode: ${data.mode}
+      unfreeze_layers: [crossattention, chain_embedding]
       model: balm
-      pretrained_path: ${paths.data_dir}/pretrained_models/pretrained-BALM
+      pretrained_path: ${paths.data_dir}/pretrained_models/pretrained_PBALM
       balm_config:
         adapter_layer_indices: 1 # Can be list of indices or an int. In case of int the adapter will be added every n layers.
       adapter_config:
         encoder_hidden_size: 256
         position_embedding_type: null
         is_cross_attention: True
-
-
+        zeroing_feed_forward: True
 
 # task
 task:
@@ -43,31 +51,32 @@ task:
 
   # model
   model: ${model}
-
   learning:
-    unroll_steps: 1 # number of unroll steps
-    noise: selected_guided_sundae
-    noise_mask: cdr_weights
+    unroll_steps: 0  # number of unroll steps
+    noise: random_mask
+    mask: cdr_weights
     mask_loss: True
     avg_unroll_loss: True
+    keep_special_tokens: False
 
-  generator:
-    max_iter: 5
-    strategy: denoise
-    temperature: 0    
+  generator: 
+    max_iter: 1
+    strategy: mask_predict
+    temperature: 0
     use_T5_initialization: False
-    tasks:
-      h3:
-        name: h3
-        noise: selected_random
-        mask: h3_mask
-      cdr:
-        name: cdr
-        noise: selected_random
-        mask: cdr_weights
-      full:
-        name: full
-        noise: full_random
+    # tasks:
+    #   h3:
+    #     name: h3
+    #     noise: selected_mask
+    #     mask: h3
+    #     contact: True
+    #   cdr:
+    #     name: cdr
+    #     noise: selected_mask
+    #     mask: cdr_weights
+    #   full:
+    #     name: full
+    #     noise: full_mask
 
   criterion:
     _target_: src.utils.criterion.CrossEntropyLoss
@@ -87,12 +96,16 @@ task:
     warmup_steps: 1000
     model_size: 10000
     warmup_init_lr: 1e-07
-    decay_rate: 0.4
+    decay_factor: 0.4
+    mode: min
+    factor: 0.6
+    patience: 20
+    min_lr: 1e-5 
+    pre_train_lr_ratio: 0.1
 
 # training related
 train:
-  seed: 42
-  lr: 3e-4
+  lr: 2e-4
   monitor: "val/full_acc"
   mode: "max"
   patience: 10
@@ -102,7 +115,7 @@ trainer:
   max_epochs: 10000
   gradient_clip_val: 0.0
   # val_check_interval: 10
-  num_sanity_val_steps: 1
+  num_sanity_val_steps: 0
   reload_dataloaders_every_n_epochs: 1
   use_distributed_sampler: false
   max_steps: 200_000
@@ -124,20 +137,11 @@ trainer:
 
 
 
-# callbacks:
-#   balm_finetune:
-#     _target_: src.utils.callbacks.CustomBackboneFinetuning
-#     unfreeze_backbone_at_epoch: [10]
-#     lambda_func: 1e-4
-#     backbone_initial_ratio_lr: 0.1
-#     backbone_initial_lr: null
-#     should_align: true
-#     initial_denom_lr: 10.0
-#     train_bn: true
-#     verbose: true
-#     rounding: 12
-#     backbone_module_paths: [model.encoder]
-    # excluded_names: ['crossattention', 'chain']
+callbacks:
+  balm_gearnet_finetune:
+    _target_: src.utils.callbacks.FineTuningFreezer
+    unfreeze_at_epoch: 10
+    unfreeze_at_step: 1000
 
   # mpnn_finetune:
   #   _target_: src.utils.callbacks.CustomBackboneFinetuning

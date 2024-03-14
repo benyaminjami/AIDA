@@ -7,7 +7,7 @@ defaults:
   - logger: many_loggers # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - paths: default
   - hydra: default
-  - experiment: gearnet_cbalm_cmlm   # experiment configs allow for version control of specific hyperparameters
+  - experiment: gearnet_cbalm_cmlm_opt   # experiment configs allow for version control of specific hyperparameters
   - callbacks: default
 
   # optional local config for machine/user specific settings
@@ -27,59 +27,26 @@ extras:
   print_config: True
 
 task:
-  generator:
+  generator: 
     max_iter: 1
-    # strategy: mask_predict
+    t: 0
+    n_samples: 100
     temperature: 0
+    strategy: null
+    optimize: true
     tasks:
-      full:
-        name: full
-        noise: full_mask
-        contact: True
-      h1:
-        name: h1
-        noise: selected_mask
-        mask: h1
-        contact: True
-      h2:
-        name: h2
-        noise: selected_mask
-        mask: h2
-        contact: True
       h3:
         name: h3
         noise: selected_mask
         mask: h3
         contact: True
-      l1:
-        name: l1
-        noise: selected_mask
-        mask: l1
-        contact: True
-      l2:
-        name: l2
-        noise: selected_mask
-        mask: l2
-        contact: True
-      l3:
-        name: l3
-        noise: selected_mask
-        mask: l3
-        contact: True
-      cdr:
-        name: cdr
-        noise: selected_mask
-        mask: cdr_weights
-        contact: True
-
-
 
 task_name: "eval_cbalm_sundae"
 seed: 2023
 
 tags: ["dev"]
 data:
-  max_tokens: 3000
+  max_tokens: 300
 
 # passing checkpoint path is necessary for evaluation
 ckpt_path: None

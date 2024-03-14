@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import torch
 import torch.nn as nn
-
+import os
 from src.utils.data_utils import Alphabet
 
 from .modeling_balm import BALMForMaskedLM, EsmConfig
@@ -30,22 +30,23 @@ class BALMWithStructuralAdatper(BALMForMaskedLM):
         balm_config.adapter_config = deepcopy(balm_config)
         balm_config.adapter_config.update(cfg.adapter_config)
 
-        pretrained_model = BALMForMaskedLM.from_pretrained(pretrained_path, config=balm_config)
+        pretrained_model = torch.load(os.path.join(pretrained_path, 'pytorch_model.bin'))
         alphabet = Alphabet(name="esm", featurizer="balm")
-        model = cls(balm_config, alphabet)
+        model = cls(balm_config, alphabet, cfg.mode)
         model.load_state_dict(
-            pretrained_model.state_dict(), strict=False
+            pretrained_model, strict=False
         )  # TODO change this later
 
         del pretrained_model
 
         # freeze pretrained parameters
-        for pname, param in model.named_parameters():
-            if "crossattention" not in pname and "chain_embedding" not in pname:
-                param.requires_grad = False
+        if cfg.freeze_pretrained:
+            for pname, param in model.named_parameters():
+                if all(name not in pname for name in cfg.unfreeze_layers):
+                    param.requires_grad = False
         return model
 
-    def __init__(self, config, alphabet):
+    def __init__(self, config, alphabet, mode):
         super().__init__(config)
         self.config = config
         self.alphabet_size = len(alphabet)
@@ -56,7 +57,9 @@ class BALMWithStructuralAdatper(BALMForMaskedLM):
         self.prepend_bos = alphabet.prepend_bos
         self.append_eos = alphabet.append_eos
         self.emb_layer_norm_before = getattr(self.config, "emb_layer_norm_before", False)
-        self._init_chain_embedding()
+        self.mode = mode
+        # if self.mode != 'h':
+        #     self._init_chain_embedding()
 
     def _init_chain_embedding(self):
         self.chain_embedding = nn.Embedding(
@@ -69,23 +72,33 @@ class BALMWithStructuralAdatper(BALMForMaskedLM):
         attention_mask: torch.Tensor,
         position_ids: torch.Tensor,
         chain_ids: torch.Tensor,
-        batch_antigen: dict,
+        antigen_feats: torch.Tensor = None,
+        antigen_feats_mask: torch.Tensor = None,
     ):
-        embedding_output = self.esm.embeddings(
-            input_ids=tokens,
-            position_ids=position_ids,
-            attention_mask=attention_mask,
-        )
-        embedding_output = embedding_output + self.chain_embedding(chain_ids)
-        embedding_output = embedding_output * attention_mask.unsqueeze(-1).to(
-            embedding_output.dtype
-        )
-        result = super().forward(
-            attention_mask=attention_mask,
-            inputs_embeds=embedding_output,
-            encoder_hidden_states=batch_antigen["feats"],
-            encoder_attention_mask=batch_antigen["feats_mask"],
-        )
+        if self.mode != 'h' and False:
+            embedding_output = self.esm.embeddings(
+                input_ids=tokens,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+            )
+            embedding_output = embedding_output + self.chain_embedding(chain_ids)
+            embedding_output = embedding_output * attention_mask.unsqueeze(-1).to(
+                embedding_output.dtype
+            )
+            result = super().forward(
+                attention_mask=attention_mask,
+                inputs_embeds=embedding_output,
+                encoder_hidden_states=antigen_feats,
+                encoder_attention_mask=antigen_feats_mask,
+            )
+        else:
+            result = super().forward(
+                input_ids=tokens,
+                position_ids=position_ids,
+                attention_mask=attention_mask,
+                encoder_hidden_states=antigen_feats,
+                encoder_attention_mask=antigen_feats_mask,
+            )
         result = dict(
             logits=result.logits,
             representations=result.hidden_states,

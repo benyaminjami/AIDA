@@ -7,7 +7,7 @@ defaults:
   - logger: many_loggers # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - paths: default
   - hydra: default
-  - experiment: mpnn_cbalm_sundae   # experiment configs allow for version control of specific hyperparameters
+  - experiment: gearnet_cbalm_cmlm   # experiment configs allow for version control of specific hyperparameters
   - callbacks: default
 
   # config for hyperparameter optimization
@@ -32,14 +32,13 @@ train:
   force_restart: false # force to train from scratch
   resume_slurm_id: null
 
-  seed: 42 # seed for random number generators in pytorch, numpy and python.random
 
   lr: 1e-3 # learning rate
   monitor: ??? # name of the logged metric which determines when model is improving. Used by scheduler (plateau), checkpointer, and early stopping
   mode: ??? # "max" means higher metric value is better, can be also "min". Used by scheduler (plateau), checkpointer, and early stopping
   patience: 10 # how many validation epochs of not improving until training stops
 
-
+seed: 42 # seed for random number generators in pytorch, numpy and python.random
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs
 # overwrite from command line with `python train.py tags="[first_tag, second_tag]"`

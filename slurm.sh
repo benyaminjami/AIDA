@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=SUNDAE-Antibody
-#SBATCH --time=48:00:00
-#SBATCH --qos=normal
+#SBATCH --time=08:00:00
+#SBATCH --qos=m
 
 ### e.g. request 4 nodes with 1 gpu each, totally 4 gpus (WORLD_SIZE==4)
 ### Note: --gres=gpu:x should equal to ntasks-per-node
@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=30GB
 #SBATCH --gres=gpu:1
-#SBATCH --partition=rtx6000#a40
+#SBATCH --partition=a40#rtx6000#a40
 #SBATCH --cpus-per-task=9
 #SBATCH --hint=nomultithread
 #SBATCH --output=slurm_logs/%j.out

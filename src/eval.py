@@ -1,13 +1,12 @@
 from typing import Any, Dict, List, Tuple
-
+import pickle
+import lightning as L
 import hydra
 import rootutils
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
-
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
-
 from src.utils import (
     RankedLogger,
     extras,
@@ -15,7 +14,7 @@ from src.utils import (
     log_hyperparameters,
     task_wrapper,
 )
-
+from src.tasks import on_prediction_mode
 log = RankedLogger(__name__, rank_zero_only=True)
 
 
@@ -29,19 +28,26 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     :param cfg: DictConfig configuration composed by Hydra.
     :return: Tuple[dict, dict] with metrics and dict with all instantiated objects.
     """
-    assert cfg.ckpt_path
+    # assert cfg.ckpt_path
+    if cfg.get("seed"):
+        L.seed_everything(cfg.seed, workers=True)
 
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
 
     log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(cfg.model)
+    model: LightningModule = hydra.utils.instantiate(cfg.task)
 
     log.info("Instantiating loggers...")
     logger: List[Logger] = instantiate_loggers(cfg.get("logger"))
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(cfg.trainer, logger=logger)
+
+    if trainer.logger:
+        trainer.logger.log_hyperparams({"ckpt_path": cfg.ckpt_path})
+    if cfg.get("seed"):
+        L.seed_everything(cfg.seed, workers=True)
 
     object_dict = {
         "cfg": cfg,
@@ -56,14 +62,16 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log_hyperparameters(object_dict)
 
     log.info("Starting testing!")
-    trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    # with on_prediction_mode(model, enable=mode == 'predict'):
+    # trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
 
     # for predictions use trainer.predict(...)
-    # predictions = trainer.predict(model=model, dataloaders=dataloaders, ckpt_path=cfg.ckpt_path)
+    with on_prediction_mode(model, enable=True):
+        predictions = trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
 
     metric_dict = trainer.callback_metrics
 
-    return metric_dict, object_dict
+    return metric_dict, object_dict, predictions
 
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="eval.yaml")
@@ -76,7 +84,10 @@ def main(cfg: DictConfig) -> None:
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)
 
-    evaluate(cfg)
+    results = evaluate(cfg)
+    predictions = results[1]["model"].predict_outputs
+    with open("predictions.pkl", 'wb') as f:
+        pickle.dump(predictions, f)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ model:
   cfg:
     encoder:
       pretrained_path: ${paths.data_dir}/pretrained_models/pretrained-mpnn
-      encoder_only: True
+      encoder_only: False
       # n_enc_layers: 6
     decoder:
       model: paired_balm

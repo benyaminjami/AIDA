@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader, Dataset
 from src.utils import RankedLogger
 
 from ..utils.data_utils import Alphabet, MaxTokensBatchSampler
-from .datasets.sabdab_dataset import SAbDab, collate_fn
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
@@ -31,6 +30,8 @@ class SAbDabDataModule(LightningDataModule):
         debug: bool = False,
         verbose: bool = False,
         truncate: int = None,
+        gearnet: bool = False,
+        mode: str = 'h*',
     ):
         super().__init__()
 
@@ -50,7 +51,10 @@ class SAbDabDataModule(LightningDataModule):
         so be careful not to execute the random split twice! The `stage` can be used to
         differentiate whether it's called before trainer.fit()` or `trainer.test()`.
         """
-
+        if self.hparams.get("gearnet", False):
+            from .datasets.sabdab_gearnet_dataset import SAbDab, collate_fn
+        else:
+            from .datasets.sabdab_dataset import SAbDab, collate_fn
         # load datasets only if they're not loaded already
         if stage == "fit":
             if self.hparams.debug:
@@ -61,22 +65,25 @@ class SAbDabDataModule(LightningDataModule):
                 split=self.hparams.train_split,
                 truncate=self.hparams.truncate,
                 verbose=self.hparams.verbose,
+                mode=self.hparams.mode,
             )
 
-            self.valid_dataset, _ = SAbDab(
-                self.hparams.data_dir,
-                max_length=self.hparams.max_length,
-                split=self.hparams.valid_split,
-                truncate=self.hparams.truncate,
-                verbose=self.hparams.verbose,
-            )
+        self.valid_dataset, _ = SAbDab(
+            self.hparams.data_dir,
+            max_length=350,
+            split=self.hparams.valid_split,
+            truncate=self.hparams.truncate,
+            verbose=self.hparams.verbose,
+            mode=self.hparams.mode,
+        )
 
         self.test_dataset, _ = SAbDab(
             self.hparams.data_dir,
-            max_length=self.hparams.max_length,
+            max_length=350,
             split=self.hparams.test_split,
             truncate=self.hparams.truncate,
             verbose=self.hparams.verbose,
+            mode=self.hparams.mode,
         )
 
         self.alphabet_antigen = Alphabet(**self.hparams.alphabet.encoder)
@@ -88,7 +95,9 @@ class SAbDabDataModule(LightningDataModule):
             antibody_featurizer=self.alphabet_antibody.featurizer,
         )
 
-    def _build_batch_sampler(self, dataset, max_tokens, shuffle=False, distributed=True):
+    def _build_batch_sampler(
+        self, dataset, max_tokens, shuffle=False, distributed=True
+    ):
         # build batch sampler
         is_distributed = distributed and torch.distributed.is_initialized()
 
@@ -100,7 +109,11 @@ class SAbDabDataModule(LightningDataModule):
             max_tokens=max_tokens,
             sort=self.hparams.sort,
             drop_last=False,
-            sort_key=lambda i: len(dataset[i][0]["seqs"][0]) + len(dataset[i][0]["seqs"][1]),
+            sort_key=lambda i: (
+                len(dataset[i][0]["seqs"][0]) + len(dataset[i][0]["seqs"][1])
+            )
+            if len(dataset[i][0]["seqs"]) == 2
+            else len(dataset[i][0]["seqs"][0]),
         )
         return batch_sampler
 
@@ -130,10 +143,21 @@ class SAbDabDataModule(LightningDataModule):
                 pin_memory=self.hparams.pin_memory,
                 collate_fn=self.collate_batch,
             ),
-            self.test_dataloader(),
+            DataLoader(
+                dataset=self.test_dataset,
+                batch_sampler=self._build_batch_sampler(
+                    self.test_dataset,
+                    max_tokens=self.hparams.max_tokens,
+                    distributed=False,
+                ),
+                num_workers=self.hparams.num_workers,
+                pin_memory=self.hparams.pin_memory,
+                collate_fn=self.collate_batch,
+            ),
         ]
 
     def test_dataloader(self):
+        # return self.val_dataloader()
         return DataLoader(
             dataset=self.test_dataset,
             batch_sampler=self._build_batch_sampler(
@@ -143,3 +167,6 @@ class SAbDabDataModule(LightningDataModule):
             pin_memory=self.hparams.pin_memory,
             collate_fn=self.collate_batch,
         )
+
+    def predict_dataloader(self):
+        return self.test_dataloader()

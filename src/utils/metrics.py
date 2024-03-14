@@ -60,4 +60,4 @@ def accuracy_per_sample(pred, target, mask=None):
     target = target.view(bsz, -1)
     mask = mask.view(bsz, -1)
 
-    return ((pred == target) * mask).sum(1) / mask.sum(1)
+    return ((pred == target) * mask).sum(1) / (mask.sum(1)+1e-10)

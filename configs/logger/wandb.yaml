@@ -13,4 +13,4 @@ wandb:
   # entity: "" # set to name of your wandb team
   group: ${oc.env:SLURM_JOB_ID} # set to slurm job id to group runs
   tags: ${tags}
-  job_type: ""
+  job_type: ${task_name}

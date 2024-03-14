@@ -54,7 +54,7 @@ def resolve_slurm_interupt(cfg):
     elif cfg.train.get("resume_slurm_id") and cfg.ckpt_path is None:
         resume_slurm_id = str(cfg.train.resume_slurm_id)
         cfg.ckpt_path = find_last_epoch_checkpoint(
-            os.path.join(cfg.paths.slurm_dir, resume_slurm_id, "sundae-train/checkpoints")
+            os.path.join(cfg.paths.slurm_dir, resume_slurm_id, cfg.task_name, "checkpoints")
         )
         log.info(f"Resume from Interrupted Slurm Job <{resume_slurm_id}> <{cfg.ckpt_path}>")
 

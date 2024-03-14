@@ -1,6 +1,6 @@
 _target_: src.data.sabdab_datamodule.SAbDabDataModule
 
-data_dir: '${paths.data_dir}/RAbD'
+data_dir: '${paths.data_dir}/SKEMPI'
 max_length: 500
 atoms: ['N', 'CA', 'C', 'O']
 

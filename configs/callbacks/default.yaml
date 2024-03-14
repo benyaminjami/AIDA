@@ -2,7 +2,7 @@ defaults:
   - model_checkpoint
   - early_stopping
   - model_summary
-  - rich_progress_bar
+  # - rich_progress_bar
   - _self_
 
 model_summary:
@@ -27,9 +27,9 @@ early_stopping:
   min_delta: 0 # minimum change in the monitored metric needed to qualify as an improvement
   check_on_train_epoch_end: false
 
-CheckpointEveryNSteps:
-  _target_: src.utils.callbacks.CheckpointEveryNSteps
-  save_step_frequency: 60
+# CheckpointEveryNSteps:
+#   _target_: src.utils.callbacks.CheckpointEveryNSteps
+#   save_step_frequency: 60
 
 # val_every_Nsteps:
 #   _target_: src.utils.callbacks.ValEveryNSteps
@@ -39,6 +39,6 @@ lr_monitor:
   _target_: pytorch_lightning.callbacks.LearningRateMonitor
   logging_interval: 'step'
 
-rich_progress_bar:
-  _target_: src.utils.callbacks.BetterRichProgressBar
-  leave: true
+# rich_progress_bar:
+#   _target_: src.utils.callbacks.BetterRichProgressBar
+#   leave: true

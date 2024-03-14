@@ -37,7 +37,7 @@ def get_scheduler(cfg, optimizer):
                 patience=cfg.patience,
                 min_lr=cfg.min_lr,
             ),
-            {"monitor": "val/loss", "interval": "epoch"},
+            {"monitor": "val/full_loss", "interval": "epoch"},
         )
     elif cfg.type == "noam":
         return (
@@ -65,8 +65,9 @@ def get_scheduler(cfg, optimizer):
         return (
             InverseSqrtLRScheduler(
                 optimizer=optimizer,
-                rate=cfg.decay_rate,
+                decay_rate=cfg.decay_factor,
                 warmup_steps=cfg.warmup_steps,
+                pre_train_lr_ratio=cfg.pre_train_lr_ratio,
             ),
             {"frequency": 1, "interval": "step"},
         )
@@ -90,7 +91,7 @@ class BlackHole:
 def inverse_sqrt_lr_schedule(step, warmup_steps, r):
     if step == 0:
         step = 1
-    return warmup_steps**-0.5 * min(
+    return warmup_steps**0.5 * min(
         step ** (-r) * warmup_steps ** (-0.5 + r), step * warmup_steps**-1.5
     )
 
@@ -99,22 +100,34 @@ class InverseSqrtLRScheduler(LambdaLR):
     def __init__(
         self,
         optimizer: Optimizer,
-        rate: float = 0.5,
+        decay_rate: float = 0.5,
         warmup_steps: int = 4000,
+        pre_train_lr_ratio: float = 0.1,
     ) -> None:
         self.warmup_steps = warmup_steps
-        rate = self.rate
+        self.decay_rate = decay_rate
+        self.pre_train_lr_ratio = pre_train_lr_ratio
 
         def lr_lambda(step):
-            return inverse_sqrt_lr_schedule(step, self.warmup_steps, rate)
+            return inverse_sqrt_lr_schedule(step, self.warmup_steps, self.decay_rate)
 
         super().__init__(optimizer, lr_lambda=lr_lambda)
+
+    def get_lr(self):
+        lrs = [
+            base_lr * lmbda(self.last_epoch)
+            for lmbda, base_lr in zip(self.lr_lambdas, self.base_lrs)
+        ]
+        lrs = [lrs[0] if i == 0 else lrs[0] * self.pre_train_lr_ratio for i in range(len(self.optimizer.param_groups))]
+        return lrs
 
 
 def noam_lr_schedule(step, warmup_steps, factor, model_size):
     if step == 0:
         step = 1
-    return factor * (model_size ** (-0.5) * min(step ** (-0.5), step * warmup_steps ** (-1.5)))
+    return factor * (
+        model_size ** (-0.5) * min(step ** (-0.5), step * warmup_steps ** (-1.5))
+    )
 
 
 class NoamScheduler(LambdaLR):

@@ -114,7 +114,7 @@ class MPNNDecoder(nn.Module):
         super().__init__()
 
         self.token_embed = token_embed or nn.Embedding(vocab, hidden_dim)
-        # self.out_proj = out_proj or nn.Linear(hidden_dim, vocab, bias=True)
+        self.out_proj = out_proj or nn.Linear(hidden_dim, vocab, bias=True)
 
         # Decoder layers
         self.decoder_layers = nn.ModuleList(
@@ -361,7 +361,7 @@ class MPNNDecoder(nn.Module):
             S.scatter_(1, t[:, None], S_t)
             h_S_t = self.token_embed(S_t)
             h_S.scatter_(1, t[:, None, None].repeat(1, 1, h_S_t.shape[-1]), h_S_t)
-        output_dict = {"S": S, "probs": all_probs, "decoding_order": decoding_order}
+        # output_dict = {"S": S, "probs": all_probs, "decoding_order": decoding_order}
         return S
 
 
@@ -433,10 +433,10 @@ class MPNNSequenceDecoder(SequenceDecoder):
         else:
             self.token_embed = nn.Embedding(n_vocab, d_model)
 
-        # if out_proj is not None:
-        #     self.out_proj = out_proj
-        # else:
-        #     self.out_proj = nn.Linear(d_model, n_vocab, bias=True)
+        if out_proj is not None:
+            self.out_proj = out_proj
+        else:
+            self.out_proj = nn.Linear(d_model, n_vocab, bias=True)
 
         self.nar = nar
         self.mpnn_decoder = MPNNDecoder(
@@ -449,20 +449,20 @@ class MPNNSequenceDecoder(SequenceDecoder):
             nar=nar,
         )
 
-        if crf:
-            from torch_random_fields.models import GeneralCRF
-            from torch_random_fields.models.constants import Inference, Training
+        # if crf:
+        #     from torch_random_fields.models import GeneralCRF
+        #     from torch_random_fields.models.constants import Inference, Training
 
-            self.crf = GeneralCRF(
-                num_states=n_vocab,
-                feature_size=d_model,
-                beam_size=64,
-                low_rank=n_vocab,
-                training=Training.PIECEWISE,
-                inference=Inference.BATCH_BELIEF_PROPAGATION,
-            )
-        else:
-            self.crf = None
+        #     self.crf = GeneralCRF(
+        #         num_states=n_vocab,
+        #         feature_size=d_model,
+        #         beam_size=64,
+        #         low_rank=n_vocab,
+        #         training=Training.PIECEWISE,
+        #         inference=Inference.BATCH_BELIEF_PROPAGATION,
+        #     )
+        # else:
+        self.crf = None
 
     def run_crf(
         self,

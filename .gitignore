@@ -158,3 +158,11 @@ slurm_logs/
 checkpoints/
 .vscode/
 .github
+*.ckpt
+*.json
+*.jsonl
+*.pdb
+# *.ipynb
+/notebooks/*
+*.pkl
+scripts/*

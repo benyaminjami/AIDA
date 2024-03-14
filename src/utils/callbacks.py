@@ -1,6 +1,6 @@
 import os
 from functools import partial
-from typing import Any, Dict, Iterable, List, Union
+from typing import Dict, Iterable, List, Union
 
 import pytorch_lightning as pl
 import torch
@@ -15,9 +15,7 @@ from pytorch_lightning.callbacks.progress.rich_progress import (
 
 # from pytorch_lightning.utilities.imports import _RICH_AVAILABLE
 from pytorch_lightning.utilities.rank_zero import (
-    rank_zero_deprecation,
     rank_zero_info,
-    rank_zero_warn,
 )
 from rich import get_console, reconfigure
 from rich.text import Text
@@ -409,3 +407,58 @@ class CustomBackboneFinetuning(callbacks.BackboneFinetuning):
 
 def linear_lambda_func(x, const):
     return x + const
+
+
+class FineTuningFreezer(callbacks.BaseFinetuning):
+    def __init__(self, unfreeze_at_epoch=4, unfreeze_at_step=1000):
+        super().__init__()
+        self._unfreeze_at_epoch = unfreeze_at_epoch
+        self._unfreeze_at_step = unfreeze_at_step
+
+    def freeze_before_training(self, pl_module):
+        # freeze any module you want
+        # Here, we are freezing `feature_extractor`
+        self.freeze(pl_module.model.encoder.structure_model)
+        self.freeze(pl_module.model.decoder, excluded_names=['crossattention', 'chain_embedding'])
+
+    def finetune_function(self, pl_module, current_epoch, optimizer):
+        # When `current_epoch` is 10, feature_extractor will start training.
+        if current_epoch == self._unfreeze_at_epoch:
+            self.unfreeze_and_add_param_group(
+                modules=pl_module.model.encoder.structure_model,
+                optimizer=optimizer,
+                train_bn=True,
+                lr=1e-5
+            )
+            self.unfreeze_and_add_param_group(
+                modules=pl_module.model.decoder,
+                optimizer=optimizer,
+                train_bn=True,
+                lr=1e-5
+            )
+
+    @staticmethod
+    def freeze(
+        modules: Union[nn.Module, Iterable[Union[nn.Module, Iterable]]],
+        train_bn: bool = True,
+        excluded_names: List[str] = [],
+    ) -> None:
+        """Freezes the parameters of the provided modules.
+
+        Args:
+            modules: A given module or an iterable of modules
+            train_bn: If True, leave the BatchNorm layers in training mode
+
+        Returns:
+            None
+        """
+        names = list(modules.named_modules())
+        names = [m[0] for m in names if not list(m[1].children()) or m[1]._parameters]
+        modules = callbacks.BackboneFinetuning.flatten_modules(modules)
+        for i, (mod, name) in enumerate(zip(modules, names)):
+            if any(excluded_name in name for excluded_name in excluded_names):
+                callbacks.BackboneFinetuning.make_trainable(mod)
+            elif isinstance(mod, nn.modules.batchnorm._BatchNorm) and train_bn:
+                callbacks.BackboneFinetuning.make_trainable(mod)
+            else:
+                callbacks.BackboneFinetuning.freeze_module(mod)

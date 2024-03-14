@@ -1,8 +1,7 @@
 import torch
 from torch import nn
 
-from src.models.generator import sample_from_categorical
-from src.models.protein_mpnn_cmlm.protein_mpnn import ProteinMPNNCMLM, ProteinMPNNConfig
+from src.models.protein_mpnn_cmlm.protein_mpnn import ProteinMPNNCMLM
 
 from .BALM.conditional_balm import BALMWithStructuralAdatper
 from .PBALM.conditional_paired_balm import PairedBALMWithStructuralAdatper
@@ -66,7 +65,7 @@ class MPNNcBALM(nn.Module):
                 (epitope_mask.size(0), -1, 256)
             )
         elif self.cfg.get("epitope_handling") == "masking":
-            batch_antigen["coord_mask"] = batch_antigen["coord_mask"] & epitope_mask
+            batch_antigen["feats_mask"] = batch_antigen["coord_mask"] & epitope_mask
         else:
             raise NotImplementedError
 

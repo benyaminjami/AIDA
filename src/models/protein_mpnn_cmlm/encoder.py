@@ -84,7 +84,7 @@ class MPNNEncoder(nn.Module):
         self.W_e = nn.Linear(edge_features, hidden_dim, bias=True)
         if self.encoder_only:
             self.W_out = nn.Linear(hidden_dim, 2 * hidden_dim, bias=True)
-        self.token_embed = nn.Embedding(n_vocab, hidden_dim)
+            self.token_embed = nn.Embedding(n_vocab, hidden_dim)
         # Encoder layers
         self.encoder_layers = nn.ModuleList(
             [

@@ -7,7 +7,7 @@ from lightning.pytorch import seed_everything
 from torch import distributed as dist
 from torch.utils.data import DataChunk
 from torch.utils.data.distributed import DistributedSampler
-from torch.utils.data.sampler import BatchSampler, SequentialSampler
+from torch.utils.data.sampler import BatchSampler, SequentialSampler, RandomSampler
 
 from . import esm
 
@@ -20,6 +20,11 @@ class Alphabet:
         if name == "esm":
             self._alphabet = self._alphabet = esm.Alphabet.from_architecture("ESM-1b")
             self.add_special_tokens = True
+        elif name == "gearnet":
+            self._alphabet = self._alphabet = esm.Alphabet.from_architecture("ESM-1b")
+            self.add_special_tokens = True
+            self.prepend_bos = False
+            self.append_eos = False
         elif name == "paired_balm":
             self._alphabet = self._alphabet = esm.Alphabet.from_architecture("paired_balm")
             self.add_special_tokens = True
@@ -53,7 +58,7 @@ class Alphabet:
                 append_eos=False,
             )
         else:
-            raise
+            raise NotImplementedError(name)
 
         self._featurizer = self.get_featurizer(featurizer, **featurizer_cfg)
 
@@ -69,12 +74,15 @@ class Alphabet:
     def get_featurizer(self, name="cath", **kwds):
         if name == "balm":
             from src.data.datasets.balm_batcher import AntibodyFeaturizer as Featurizer
-
             return Featurizer(alphabet=self)
+
         elif name == "mpnn":
             from src.data.datasets.mpnn_batcher import AntigenFeaturizer as Featurizer
-
             return Featurizer(alphabet=self, coord_nan_to_zero=kwds.get("coord_nan_to_zero", True))
+
+        elif name == 'gearnet':
+            from src.data.datasets.gearnet_batcher import AntigenFeaturizer as Featurizer
+            return Featurizer(alphabet=self)
 
     @property
     def featurizer(self):
@@ -83,9 +91,9 @@ class Alphabet:
     def featurize(self, raw_batch, **kwds):
         return self._featurizer(raw_batch, **kwds)
 
-    def decode(self, batch_ids, return_as="str", remove_special=False):
+    def decode(self, tensors, return_as="str", remove_special=False):
         ret = []
-        for ids in batch_ids.cpu():
+        for i, ids in enumerate(tensors.cpu()):
             if return_as == "str":
                 line = "".join([self.get_tok(id) for id in ids])
                 if remove_special:
@@ -122,12 +130,14 @@ class MaxTokensBatchSampler(BatchSampler):
         buffer_size_multiplier=100,
         seed=42,
         shuffle=True,
+        sampler=None,
     ):
         self.distributed = distributed
-        if distributed:
-            sampler = DistributedSampler(dataset, shuffle=shuffle)
-        else:
-            sampler = SequentialSampler(dataset)
+        if sampler is None:
+            if distributed:
+                sampler = DistributedSampler(dataset, shuffle=shuffle)
+            else:
+                sampler = RandomSampler(dataset)
         super().__init__(sampler, batch_size, drop_last)
 
         self.max_tokens = max_tokens
@@ -167,12 +177,14 @@ class MaxTokensBatchSampler(BatchSampler):
         for index in indices:
             # 1) add to buffer
             length = self.sort_key(index)
-            heapq.heappush(buffer, (length, index))
+            # heapq.heappush(buffer, (length, index))
+            buffer.append((length, index))
             buffer_size += length
 
             # 2) create batches in the sorted buffer once buffer is full
             if buffer_size > self.max_buffer_size:
-                length, index = heapq.heappop(buffer)
+                # length, index = heapq.heappop(buffer)
+                length, index = buffer.pop()
                 buffer_size -= length
                 if batch_size + length > self.max_tokens:
                     bucket_batches.append((batch, batch_size))
@@ -182,7 +194,8 @@ class MaxTokensBatchSampler(BatchSampler):
 
         # 3) create batches from the rest data in the buffer
         while buffer:
-            length, index = heapq.heappop(buffer)
+            # length, index = heapq.heappop(buffer)
+            length, index = buffer.pop()
             # print(length, index)
             if batch_size + length > self.max_tokens:
                 bucket_batches.append((batch, batch_size))

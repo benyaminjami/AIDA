@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
 from pytorch_lightning import LightningModule
+from contextlib import contextmanager
 
 # from pytorch_lightning.utilities.types import _METRIC_COLLECTION
 from torch import distributed as dist
@@ -39,6 +40,8 @@ class TaskLitModule(LightningModule):
 
         self.save_hyperparameters(logger=True)
         self.valid_logged = {}
+        self.val_outputs = {}
+        self.predict_outputs = {}
 
     def setup(self, stage=None) -> None:
         self._stage = stage
@@ -57,10 +60,10 @@ class TaskLitModule(LightningModule):
         self,
         name: str,
         value,  #: _METRIC_COLLECTION,
-        prog_bar: bool = False,
+        prog_bar: bool = True,
         logger: bool = True,
-        on_step: Optional[bool] = None,
-        on_epoch: Optional[bool] = None,
+        on_step: Optional[bool] = False,
+        on_epoch: Optional[bool] = True,
         **kwargs,
     ) -> None:
         if on_epoch and not self.training:
@@ -83,24 +86,33 @@ class TaskLitModule(LightningModule):
     def validation_step(self, batch: Any, batch_idx: int):
         raise NotImplementedError
 
-    def validation_step_end(
-        self, *args, **kwargs
-    ) -> Optional[Union[torch.Tensor, Dict[str, Any]]]:
-        return super().validation_step_end(*args, **kwargs)
+    def on_validation_batch_end(
+        self, outputs: Union[torch.Tensor, Dict[str, Any]], batch: Any, batch_idx: int, dataloader_idx: int = 0
+    ) -> None:
+        val_list = self.val_outputs.get(dataloader_idx, [])
+        val_list.append(outputs)
+        self.val_outputs[dataloader_idx] = val_list
+        # return super().validation_step_end(*args, **kwargs)
 
-    def on_validation_epoch_end(self, outputs: List[Any] = None):
+    def on_validation_epoch_start(self):
+        self.val_outputs = {}
+        self.predict_outputs = {}
+
+    def on_validation_epoch_end(self):
         logging_info = ", ".join(f"{key}={val:.3f}" for key, val in self.valid_logged.items())
         logging_info = f"Validation Info @ (Epoch {self.current_epoch}, global step {self.global_step}): {logging_info}"
         log.info(logging_info)
 
-    def test_step(self, batch: Any, batch_idx: int):
-        return self.validation_step(batch, batch_idx)
+    # -------# Testing #-------- #
 
-    def test_step_end(self, *args, **kwargs) -> Optional[Union[torch.Tensor, Dict[str, Any]]]:
-        return self.validation_step_end(*args, **kwargs)
+    def test_step(self, *args, **kwargs):
+        return self.validation_step(*args, **kwargs)
 
-    def on_test_epoch_end(self, outputs: List[Any]):
-        return self.on_validation_epoch_end(outputs)
+    def on_test_batch_end(self, *args, **kwargs) -> Optional[Union[torch.Tensor, Dict[str, Any]]]:
+        return self.on_validation_batch_end(*args, **kwargs)
+
+    def on_test_epoch_end(self):
+        return self.on_validation_epoch_end()
 
     # -------# Inference/Prediction #-------- #
     def forward(self, batch):
@@ -109,7 +121,14 @@ class TaskLitModule(LightningModule):
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         raise NotImplementedError
 
-    def predict_epoch_end(self, results: List[Any], log_pref=None) -> None:
+    def on_predict_batch_end(
+        self, outputs: Union[torch.Tensor, Dict[str, Any]], batch: Any, batch_idx: int, dataloader_idx: int = 0
+    ) -> None:
+        predict_list = self.predict_outputs.get(dataloader_idx, [])
+        predict_list.append(outputs)
+        self.predict_outputs[dataloader_idx] = predict_list
+
+    def on_predict_epoch_end(self) -> None:
         raise NotImplementedError
 
     # -------# Optimizers & Lr Schedulers #-------- #
@@ -120,7 +139,7 @@ class TaskLitModule(LightningModule):
         See examples here:
             https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
         """
-        optimizer = get_optimizer(self.hparams.optimizer, self.parameters())
+        optimizer = get_optimizer(self.hparams.optimizer, filter(lambda p: p.requires_grad, self.parameters()))
         if "lr_scheduler" in self.hparams and self.hparams.lr_scheduler is not None:
             lr_scheduler, extra_kwargs = get_scheduler(self.hparams.lr_scheduler, optimizer)
             return {
@@ -170,3 +189,44 @@ class AutoMetric(nn.Module):
 
     def reset(self, name):
         getattr(self, name).reset()
+
+
+@contextmanager
+def on_prediction_mode(pl_module: LightningModule, enable=True):
+    if not enable:
+        yield
+        return
+
+    _methods = [
+        '{}_step',
+        'on_{}_batch_end',
+        'on_{}_epoch_end',
+        # 'on_{}_batch_start',
+        # 'on_{}_batch_end',
+        # 'on_{}_epoch_start',
+        # 'on_{}_epoch_end',
+        # 'on_{}_start',
+        # 'on_{}_end',
+    ]
+
+    for _method in _methods:
+        _test_method, _predict_method = _method.format('test'), _method.format('predict')
+
+        _test_method_obj = getattr(pl_module, _test_method, None)
+        _predict_method_obj = getattr(pl_module, _predict_method, None)
+
+        # swap test and predict method/hook
+        setattr(pl_module, _test_method, _predict_method_obj)
+        setattr(pl_module, _predict_method, _test_method_obj)
+
+    yield
+
+    for _method in _methods:
+        _test_method, _predict_method = _method.format('test'), _method.format('predict')
+
+        _test_method_obj = getattr(pl_module, _test_method, None)
+        _predict_method_obj = getattr(pl_module, _predict_method, None)
+
+        # swap test and predict method/hook
+        setattr(pl_module, _test_method, _predict_method_obj)
+        setattr(pl_module, _predict_method, _test_method_obj)

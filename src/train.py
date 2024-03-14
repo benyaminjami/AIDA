@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import hydra
 import lightning as L
+import torch
 import rootutils
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
@@ -54,6 +55,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     # set seed for random number generators in pytorch, numpy and python.random
     if cfg.get("seed"):
         L.seed_everything(cfg.seed, workers=True)
+        torch.use_deterministic_algorithms(mode=True, warn_only=True)
 
     log.info(f"Instantiating datamodule <{cfg.data._target_}>")
     datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
@@ -69,8 +71,9 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
-    logger[-1].watch(model, log_freq=100)
-    trainer.strategy.find_unused_parameters = True
+
+    # logger[-1].watch(model, log_freq=100)
+    # trainer.strategy.find_unused_parameters = True
     object_dict = {
         "cfg": cfg,
         "datamodule": datamodule,

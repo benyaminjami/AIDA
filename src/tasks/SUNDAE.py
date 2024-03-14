@@ -1,32 +1,22 @@
 import os
-from typing import Any, List, Union
+from typing import Any, Union
 
+import json
 import hydra
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from torch import nn
 from torchmetrics import CatMetric, MaxMetric, MeanMetric, MinMetric, SumMetric
 
-from src.models.generator import IterativeRefinementGenerator
-from src.models.mpnn_cbalm import MPNNcBALM
+from src.models.generator import IterativeRefinementGenerator, sample_from_categorical
+from src.models.optimizer import AntibodyOptimizer
+# from src.models.optimizer_sundae import AntibodyOptimizer
 from src.tasks import TaskLitModule
 from src.utils import RankedLogger, metrics
+from src.utils.utils import dictoflist_to_listofdict
 from src.utils.data_utils import Alphabet
-
-# from byprot.utils.config import compose_config as Cfg, merge_config
-
-
-# from byprot.datamodules.datasets.data_utils import Alphabet
-
-
+from src.tasks.utils import inject_noise, resolve_noise_mask
 log = RankedLogger(__name__, rank_zero_only=True)
-
-
-class callable_staticmethod(staticmethod):
-    """Callable version of staticmethod."""
-
-    def __call__(self, *args, **kwargs):
-        return self.__func__(*args, **kwargs)
 
 
 class SUNDAE(TaskLitModule):
@@ -47,26 +37,32 @@ class SUNDAE(TaskLitModule):
         self.alphabet_decoder = Alphabet(**alphabet.decoder)
         self.generator = generator
         self.build_model()
-        self.build_generator()
+        self.build_generator_optimizer()
 
     def setup(self, stage=None) -> None:
         super().setup(stage)
 
         self.build_criterion()
-        self.metrics = nn.ModuleList([self.build_torchmetric(), self.build_torchmetric()])
+        self.metrics = nn.ModuleList(
+            [self.build_torchmetric(), self.build_torchmetric()]
+        )
 
         if self.stage == "fit":
             log.info(f"\n{self.model}")
 
     def build_model(self):
         log.info(f"Instantiating neural model <{self.hparams.model._target_}>")
-        self.model: MPNNcBALM = hydra.utils.instantiate(self.hparams.model)
-        # self.backbone = self.model.encoder  # For backbonefinetune callback
+        self.model = hydra.utils.instantiate(self.hparams.model)
 
-    def build_generator(self):
-        self.generator = IterativeRefinementGenerator(
-            alphabet=self.alphabet_decoder, **self.hparams.generator
-        )
+    def build_generator_optimizer(self):
+        if not self.hparams.generator.get('optimize', False):
+            self.generator = IterativeRefinementGenerator(
+                alphabet=self.alphabet_decoder, **self.hparams.generator
+            )
+        else:
+            self.generator = AntibodyOptimizer(
+                alphabet=self.alphabet_decoder, **self.hparams.generator
+            )
 
     def build_criterion(self):
         self.criterion = hydra.utils.instantiate(self.hparams.criterion)
@@ -80,8 +76,8 @@ class SUNDAE(TaskLitModule):
             metrics[f"{task}_acc"] = MeanMetric()
             metrics[f"{task}_acc_best"] = MaxMetric()
             metrics[f"{task}_acc_median"] = CatMetric()
+            metrics[f"{task}_contact_acc"] = MeanMetric()
         metrics["count"] = SumMetric()
-        metrics["h3_contact_acc"] = MeanMetric()
         return nn.ModuleDict(metrics)
 
     def load_from_ckpt(self, ckpt_path):
@@ -95,97 +91,7 @@ class SUNDAE(TaskLitModule):
             print(f"Missing Keys: {missing}")
             print(f"Unexpected Keys: {unexpected}")
 
-    # -------# Training #-------- #
-    @torch.no_grad()
-    @callable_staticmethod
-    def inject_noise(
-        tokens,
-        attention_mask,
-        alphabet,
-        noise,
-        sel_mask=None,
-        sel_mask_add_prob=0.1,
-        keep_idx=None,
-    ):
-        padding_idx = alphabet.padding_idx
-        if keep_idx is None:
-            keep_idx = [alphabet.cls_idx, alphabet.eos_idx]
-
-        def get_random_text(shape):
-            return torch.randint(
-                alphabet.get_idx(alphabet.standard_toks[0]),
-                alphabet.get_idx(alphabet.standard_toks[-1]) + 1,
-                shape,
-            )
-
-        def _full_random(target_tokens):
-            target_masks = target_tokens.ne(padding_idx) & attention_mask
-            random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
-            return (
-                target_masks * random_text + ~target_masks * target_tokens,
-                target_masks,
-            )
-
-        def _selected_random(target_tokens):
-            target_masks = target_tokens.ne(padding_idx) & attention_mask & sel_mask.ne(0)
-            random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
-            return (
-                target_masks * random_text + ~target_masks * target_tokens,
-                target_masks,
-            )
-
-        def _sundae(target_tokens):
-            target_masks = target_tokens.ne(padding_idx) & attention_mask
-            corruption_prob_per_sequence = torch.rand((target_tokens.shape[0], 1))
-            rand = torch.rand(target_tokens.shape)
-            mask = (rand < corruption_prob_per_sequence).to(target_tokens.device) & target_masks
-
-            random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
-            return mask * random_text + ~mask * target_tokens, mask
-
-        def _selected_sundae(target_tokens):
-            target_masks = target_tokens.ne(padding_idx) & attention_mask & sel_mask.ne(0)
-            corruption_prob_per_sequence = torch.rand((target_tokens.shape[0], 1))
-            rand = torch.rand(target_tokens.shape)
-            mask = (rand < corruption_prob_per_sequence).to(target_tokens.device) & target_masks
-
-            random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
-            return mask * random_text + ~mask * target_tokens, mask
-
-        def _selected_guided_sundae(target_tokens):
-            target_masks = target_tokens.ne(padding_idx) & attention_mask
-            corruption_prob_per_sequence = torch.rand((target_tokens.shape[0], 1)).to(
-                target_tokens.device
-            )
-            rand = torch.rand(target_tokens.shape).to(target_tokens.device)
-            rand = rand - sel_mask * sel_mask_add_prob
-            mask = (rand < corruption_prob_per_sequence).to(target_tokens.device) & target_masks
-
-            random_text = get_random_text(target_tokens.shape).to(target_tokens.device)
-            return mask * random_text + ~mask * target_tokens, mask
-
-        if noise == "no_noise":
-            randomed_tokens, randomed_tokens_mask = tokens
-        elif noise == "sundae":
-            randomed_tokens, randomed_tokens_mask = _sundae(tokens)
-        elif noise == "selected_sundae":
-            randomed_tokens, randomed_tokens_mask = _selected_sundae(tokens)
-        elif noise == "selected_guided_sundae":
-            randomed_tokens, randomed_tokens_mask = _selected_guided_sundae(tokens)
-        elif noise == "full_random":
-            randomed_tokens, randomed_tokens_mask = _full_random(tokens)
-        elif noise == "selected_random":
-            randomed_tokens, randomed_tokens_mask = _selected_random(tokens)
-        else:
-            raise ValueError(f"Noise type ({noise}) not defined.")
-
-        keep_mask = torch.isin(tokens, torch.tensor(keep_idx).to(tokens.device))
-        prev_tokens = tokens * keep_mask + randomed_tokens * ~keep_mask
-        prev_token_mask = randomed_tokens_mask & attention_mask & ~keep_mask
-
-        return prev_tokens, prev_token_mask
-
-    def step(self, batch, noise, noise_mask="cdr_weights"):
+    def step(self, batch, task):
         """
         batch is a Dict containing:
             - corrds: FloatTensor [bsz, len, n_atoms, 3], coordinates of proteins
@@ -194,15 +100,19 @@ class SUNDAE(TaskLitModule):
             - lengths: int [bsz, len], protein sequence lengths
             - tokens: LongTensor [bsz, len], sequence of amino acids
         """
+        noise_mask = task.get("mask", None)
         if noise_mask is None:
-            noise_mask = "cdr_weights"
-        noise_mask = batch["antibody"][noise_mask]
-        batch_antibody = batch["antibody"]
-        attention_mask = batch_antibody["attention_mask"]
-        tokens = batch_antibody["tokens"]
+            noise_mask = batch["antibody"]["cdr_weights"]
+        else:
+            noise_mask = resolve_noise_mask(batch['antibody'], noise_mask)
 
-        prev_tokens, prev_token_mask = SUNDAE.inject_noise(
-            tokens, attention_mask, self.alphabet_decoder, noise, sel_mask=noise_mask
+        prev_tokens, prev_token_mask = inject_noise(
+            batch["antibody"]["tokens"],
+            batch["antibody"]["attention_mask"],
+            self.alphabet_decoder,
+            task.noise,
+            sel_mask=noise_mask,
+            keep_special_tokens=task.get('keep_special_tokens', False),
         )
         batch["antibody"]["prev_tokens"] = prev_tokens
         batch["antibody"]["prev_token_mask"] = label_mask = prev_token_mask
@@ -210,36 +120,39 @@ class SUNDAE(TaskLitModule):
         logits = self.model(batch)
         loss, logging_output = self.criterion(
             logits,
-            tokens,
-            label_mask=label_mask if self.hparams.learning.mask_loss else None,
+            batch["antibody"]["tokens"],
+            label_mask=label_mask if task.get("mask_loss", True) else None,
         )
 
         # Unroll steps
-        for step in range(self.hparams.learning.unroll_steps):
-            batch["antibody"]["prev_tokens"] = logits.argmax(dim=-1)
+        for step in range(task.get("unroll_steps", 0)):
+            batch["antibody"]["prev_tokens"] = (
+                sample_from_categorical(logits.detach())[0]
+            )
             logits = self.model(batch)
             loss_step, logging_output_step = self.criterion(
                 logits,
-                tokens,
-                label_mask=label_mask if self.hparams.learning.mask_loss else None,
+                batch["antibody"]["tokens"],
+                label_mask=label_mask if task.get("mask_loss", True) else None,
             )
-
             loss += loss_step
 
         if self.hparams.learning.get("avg_unroll_loss", True):
-            loss /= self.hparams.learning.unroll_steps + 1
+            loss /= task.get("unroll_steps", 0) + 1
+
         # TODO ADD SUNDAE
         return loss, logging_output
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, logging_output = self.step(
             batch=batch,
-            noise=self.hparams.learning.noise,
-            noise_mask=self.hparams.learning.get("noise_mask", "cdr_weights"),
+            task=self.hparams.learning,
         )
 
         # log train metrics
-        self.log("global_step", self.global_step, on_step=True, on_epoch=False, prog_bar=True)
+        self.log(
+            "global_step", self.global_step, on_step=True, on_epoch=False, prog_bar=True
+        )
         self.log("lr", self.lrate, on_step=True, on_epoch=False, prog_bar=True)
 
         for log_key in logging_output:
@@ -249,7 +162,6 @@ class SUNDAE(TaskLitModule):
                 log_value,
                 on_step=True,
                 on_epoch=False,
-                prog_bar=True,
             )
 
         return {"loss": loss}
@@ -258,10 +170,10 @@ class SUNDAE(TaskLitModule):
     def validation_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0):
         return_dict = {}
         for task in self.hparams.generator.tasks:
+
             loss, logging_output = self.step(
                 batch=batch,
-                noise=self.hparams.generator.tasks[task].noise,
-                noise_mask=self.hparams.generator.tasks[task].get("noise_mask", None),
+                task=self.hparams.generator.tasks[task]
             )
 
             return_dict[f"{task}_loss"] = loss
@@ -283,74 +195,59 @@ class SUNDAE(TaskLitModule):
             )
         return return_dict
 
-    def on_validation_epoch_end(self, outputs: List[Any] = None):
+    def on_validation_epoch_end(self):
         # compute metrics averaged over the whole dataset
         for i, log_key in enumerate(["val", "test"]):
             for task in self.hparams.generator.tasks:
+                if self.metrics[i][f"{task}_loss"]._update_count == 0:
+                    continue
                 eval_loss = self.metrics[i][f"{task}_loss"].compute()
                 self.metrics[i][f"{task}_loss"].reset()
                 eval_nll_loss = self.metrics[i][f"{task}_nll_loss"].compute()
                 self.metrics[i][f"{task}_nll_loss"].reset()
                 eval_ppl = torch.exp(eval_nll_loss)
 
-                self.log(
-                    f"{log_key}/{task}_loss",
-                    eval_loss,
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=True,
-                )
-                self.log(
-                    f"{log_key}/{task}_nll_loss",
-                    eval_nll_loss,
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=True,
-                )
-                self.log(
-                    f"{log_key}/{task}_ppl",
-                    eval_ppl,
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=True,
-                )
+                self.log(f"{log_key}/{task}_loss", eval_loss)
+                self.log(f"{log_key}/{task}_nll_loss", eval_nll_loss)
+                self.log(f"{log_key}/{task}_ppl", eval_ppl)
+
                 if self.stage == "fit":
                     self.metrics[i][f"{task}_ppl_best"].update(eval_ppl)
-                    self.log(
-                        f"val/{task}_ppl_best",
-                        self.metrics[i][f"{task}_ppl_best"].compute(),
-                        on_step=False,
-                        on_epoch=True,
-                        prog_bar=True,
-                    )
+                    self.log(f"val/{task}_ppl_best", self.metrics[i][f"{task}_ppl_best"].compute())
+        if self.stage == "fit":
+            self.on_predict_epoch_end()
 
-        self.predict_epoch_end(results=None)
-
-        super().on_validation_epoch_end(outputs)
+        super().on_validation_epoch_end()
 
     # -------# Inference/Prediction #-------- #
-    def forward(self, batch, noise, noise_mask="cdr_weights", return_ids=False):
+    def forward(self, batch, noise, noise_mask, return_ids=False):
         # In testing, remove target tokens to ensure no data leakage!
         # or you can just use the following one if you really know what you are doing:
-        #   tokens = batch['tokens']
-        # tokens = batch["antibody"].pop("tokens")
-        if noise_mask is None:
-            noise_mask = "cdr_weights"
-        noise_mask = batch["antibody"][noise_mask]
+        # tokens = batch['tokens']
+        tokens = batch["antibody"]["tokens"]
         batch_antibody = batch["antibody"]
         attention_mask = batch_antibody["attention_mask"]
-        tokens = batch_antibody["tokens"]
-        prev_tokens, prev_token_mask = SUNDAE.inject_noise(
+        batch_antibody['noise_mask'] = noise_mask
+        prev_tokens, prev_token_mask = inject_noise(
             tokens,
             attention_mask,
             self.alphabet_decoder,
             noise=noise,
             sel_mask=noise_mask,
+            # mask_special_tokens=False
         )
+        if self.hparams.generator.get("use_T5_initialization", False):
+            t5_prev_tokens = batch["antibody"].get("prev_tokens", None)
+            if t5_prev_tokens is None:
+                log.error(
+                    "Could not find T5 initialization, continue with random initialization"
+                )
+            else:
+                prev_tokens = t5_prev_tokens
         batch["antibody"]["prev_tokens"] = prev_tokens
         batch["antibody"]["prev_token_mask"] = prev_token_mask
 
-        output_tokens, output_scores = self.generator.generate(
+        output_tokens, output_scores, history = self.generator.generate(
             model=self.model,
             batch=batch,
             max_iter=self.hparams.generator.max_iter,
@@ -359,43 +256,51 @@ class SUNDAE(TaskLitModule):
         )
         if not return_ids:
             return self.alphabet_decoder.decode(output_tokens)
-        return output_tokens
+        return output_tokens, history, prev_token_mask
 
     def predict_step(
         self, batch: Any, batch_idx: int, dataloader_idx: int = 0, log_metrics=True
     ) -> Any:
         tokens = batch["antibody"]["tokens"]
 
-        contact_mask = batch["antibody"]["h3_mask"].ne(0) & (batch["antibody"]["dists"] < 6.6)
-
         results = {
             "pred_tokens": {},
             "names": batch["antibody"]["names"],
-            "native": batch["antibody"]["seqs"],
+            "native": batch["antibody"]["tokens"],
             "recovery": {},
             "dataloader_idx": dataloader_idx,
+            "history": {},
+            "masks": {},
         }
         if log_metrics:
             self.metrics[dataloader_idx]["count"].update(len(tokens))
 
+        recovery_acc_per_sample = torch.tensor([100])
         for task in self.hparams.generator.tasks:
-            pred_tokens = self.forward(
+            noise_mask = self.hparams.generator.tasks[task].get("mask", None)
+            if noise_mask is None:
+                noise_mask = batch["antibody"]["cdr_weights"]
+            else:
+                noise_mask = resolve_noise_mask(batch["antibody"], noise_mask)
+            pred_tokens, history, generated_mask = self.forward(
                 batch,
                 noise=self.hparams.generator.tasks[task].noise,
-                noise_mask=self.hparams.generator.tasks[task].get("mask", None),
+                noise_mask=noise_mask,
                 return_ids=True,
             )
-
             if log_metrics:
                 recovery_acc_per_sample = metrics.accuracy_per_sample(
-                    pred_tokens,
-                    tokens,
-                    mask=batch["antibody"].get(self.hparams.generator.tasks[task].get("mask")),
+                    pred_tokens, tokens, mask=batch["antibody"]["prev_token_mask"]
                 )
-                self.metrics[dataloader_idx][f"{task}_acc_median"].update(recovery_acc_per_sample)
+                self.metrics[dataloader_idx][f"{task}_acc_median"].update(
+                    recovery_acc_per_sample
+                )
 
-                self.metrics[dataloader_idx][f"{task}_acc"].update(recovery_acc_per_sample)
-                if task == "h3":
+                self.metrics[dataloader_idx][f"{task}_acc"].update(
+                    recovery_acc_per_sample
+                )
+                if self.hparams.generator.tasks[task].get("contact", False):
+                    contact_mask = batch["antibody"]["prev_token_mask"] & (batch["antibody"]["dists"] < 6.6)
                     recovery_contact_acc_per_sample = metrics.accuracy_per_sample(
                         pred_tokens, tokens, mask=contact_mask
                     )
@@ -403,50 +308,46 @@ class SUNDAE(TaskLitModule):
                         recovery_contact_acc_per_sample
                     )
 
-            results["pred_tokens"][task] = pred_tokens
             results["recovery"][task] = recovery_acc_per_sample
-
+            results["pred_tokens"][task] = pred_tokens
+            results["history"][task] = history
+            results["masks"][task] = generated_mask
         return results
 
-    def predict_epoch_end(self, results: List[Any]) -> None:
+    def on_predict_epoch_end(self) -> None:
         for i, log_key in enumerate(["val", "test"]):
-            if self.metrics[i]["count"].compute() == 0:
+            if self.metrics[i]["count"]._update_count == 0:
                 continue
 
             count = self.metrics[i]["count"].compute()
             self.metrics[i]["count"].reset()
-            self.log(f"{log_key}/count", count, on_step=False, on_epoch=True, prog_bar=True)
+            self.log(
+                f"{log_key}/count", count, on_step=False, on_epoch=True, prog_bar=True
+            )
 
             for task in self.hparams.generator.tasks:
-                if task == "h3":
+                if self.hparams.generator.tasks[task].get("contact", False):
                     acc = self.metrics[i][f"{task}_contact_acc"].compute() * 100
                     self.metrics[i][f"{task}_contact_acc"].reset()
                     self.log(
                         f"{log_key}/{task}_contact_acc",
-                        acc,
-                        on_step=False,
-                        on_epoch=True,
-                        prog_bar=True,
+                        acc
                     )
 
                 acc = self.metrics[i][f"{task}_acc"].compute() * 100
                 self.metrics[i][f"{task}_acc"].reset()
                 self.log(
                     f"{log_key}/{task}_acc",
-                    acc,
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=True,
+                    acc
                 )
 
-                acc_median = torch.median(self.metrics[i][f"{task}_acc_median"].compute()) * 100
+                acc_median = (
+                    torch.median(self.metrics[i][f"{task}_acc_median"].compute()) * 100
+                )
                 self.metrics[i][f"{task}_acc_median"].reset()
                 self.log(
                     f"{log_key}/{task}_acc_median",
-                    acc_median,
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=True,
+                    acc_median
                 )
 
                 if self.stage == "fit":
@@ -454,45 +355,52 @@ class SUNDAE(TaskLitModule):
                     self.log(
                         f"{log_key}/{task}_acc_best",
                         self.metrics[i][f"{task}_acc_best"].compute(),
-                        on_epoch=True,
-                        prog_bar=True,
                     )
 
         if self.stage != "fit":
             self.save_prediction(
-                results, saveto=f"./test_tau{self.hparams.generator.temperature}.fasta"
+                self.predict_outputs[0],
+                saveto=f"./test_tau{self.hparams.generator.max_iter}.json",
             )
+        return self.predict_outputs
 
     def save_prediction(self, results, saveto=None):
-        save_dict = {}
         if saveto:
             saveto = os.path.abspath(saveto)
             log.info(f"Saving predictions to {saveto}...")
             fp = open(saveto, "w")
-            fp_native = open("./native.fasta", "w")
 
         for entry in results:
             for name, prediction, native, recovery in zip(
                 entry["names"],
-                self.alphabet_decoder.decode(entry["pred_tokens"], remove_special=True),
-                entry["native"],
-                entry["recovery"],
+                dictoflist_to_listofdict(
+                    {
+                        task: self.alphabet_decoder.decode(entry["pred_tokens"][task])
+                        for task in entry["pred_tokens"]
+                    }, self.hparams.generator.get('optimize', False)
+                ),
+                self.alphabet_decoder.decode(entry["native"]),
+                dictoflist_to_listofdict(entry["recovery"]),
             ):
-                save_dict[name] = {
-                    "prediction_h3": prediction["h3"],
-                    "prediction_cdr": prediction["cdr"],
-                    "prediction_full": prediction["full"],
-                    "native": native,
-                    "recovery": recovery,
+                save_dict = {
+                    "pdb": name,
+                    "native": native.replace("<pad>", "")
+                    .replace("<cls>", "")
+                    .replace("<eos>", ":")[:-1],
+                    "recovery": {k: recovery[k].item() for k in recovery},
                 }
+                clean_seq = lambda x: x.replace("<pad>", "").replace("<cls>", "").replace("<eos>", ":")[:-1]
+                save_dict.update(
+                    {
+                        f"prediction_{task}": clean_seq(prediction[task]) if not isinstance(prediction[task], list)
+                        else list(set([clean_seq(s) for s in prediction[task]]))
+                        for task in prediction
+                    }
+                )
                 if saveto:
-                    fp.write(f">name={name} | L={len(prediction['h3'])} | AAR={recovery:.2f}\n")
-                    fp.write(f"h3: \t {prediction['h3']}\n")
-                    fp.write(f"cdr: \t {prediction['cdr']}\n")
-                    fp.write(f"full: \t {prediction['full']}\n\n")
-                    fp_native.write(f">name={name}\n{native}\n\n")
+                    save_json = json.dumps(save_dict)
+                    fp.write(save_json + "\n")
 
         if saveto:
             fp.close()
-            fp_native.close()
         return save_dict

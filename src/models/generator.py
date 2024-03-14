@@ -5,10 +5,20 @@ from src.utils.data_utils import Alphabet
 
 def _skeptical_unmasking(output_scores, output_masks, p):
     sorted_index = output_scores.sort(-1)[1]
-    boundary_len = ((output_masks.sum(1, keepdim=True).type_as(output_scores) - 2) * p).long()
+    boundary_len = ((output_masks.sum(1, keepdim=True).type_as(output_scores)) * p).long()
     # `length * p`` positions with lowest scores get kept
     skeptical_mask = new_arange(output_masks) < boundary_len
     return skeptical_mask.scatter(1, sorted_index, skeptical_mask)
+
+
+def _random_unmasking(output_scores, output_masks, p):
+    mask = torch.zeros_like(output_scores).type(torch.bool)
+    for i in range(output_scores.size(0)):
+        probs = torch.zeros_like(output_masks[i]).type(torch.float)
+        probs[output_masks[i]] = -(output_scores[i][output_masks[i]])
+        ind = torch.multinomial(probs, max(1, int(output_masks[i].sum().item()*0.2)))
+        mask[i][ind] = True
+    return mask
 
 
 def exists(obj):
@@ -72,9 +82,8 @@ class IterativeRefinementGenerator:
 
         # 1) initialized from all mask tokens
         initial_output_tokens = batch_antibody["prev_tokens"]
-        initial_output_scores = torch.zeros(
-            *initial_output_tokens.size(), device=initial_output_tokens.device
-        )
+        initial_output_tokens_mask = batch_antibody['prev_token_mask']
+        prev_scores = torch.zeros_like(initial_output_tokens)
         decoder_info = dict(
             attentions=None,
             step=0,
@@ -94,27 +103,50 @@ class IterativeRefinementGenerator:
                 need_attn_weights=need_attn_weights,
             )
             output_tokens, output_scores = sample_from_categorical(
-                decoder_out, temperature=temperature
+                decoder_out,
+                temperature=temperature if step < max_iter-1 else 0,
+                prev_tokens=batch_antibody['prev_tokens'],
+                mask=initial_output_tokens_mask
             )
-
-            # 2.2: re-mask skeptical parts of low confidence
-            # skeptical decoding (depend on the maximum decoding steps.)
-            if strategy == "mask_predict" and (step + 1) < max_iter:
-                skeptical_mask = _skeptical_unmasking(
-                    output_scores=output_scores,
-                    output_masks=output_tokens.ne(self.padding_idx),  # & coord_mask,
-                    p=1 - (step + 1) / max_iter,
-                )
-
-                output_tokens.masked_fill_(skeptical_mask, self.mask_idx)
-                output_scores.masked_fill_(skeptical_mask, 0.0)
+            
 
             # 2.3: update
             if replace_visible_tokens:
                 visible_token_mask = ~batch_antibody["prev_token_mask"]
                 visible_tokens = batch_antibody["prev_tokens"]
                 output_tokens = torch.where(visible_token_mask, visible_tokens, output_tokens)
+                output_scores = torch.where(visible_token_mask, prev_scores, output_scores)
 
+            # 2.2: re-mask skeptical parts of low confidence
+            # skeptical decoding (depend on the maximum decoding steps.)
+            # skeptical_mask = _skeptical_unmasking(
+            #     output_scores=output_scores,
+            #     output_masks=initial_output_tokens_mask,
+            #     p=1 - (step + 1) / max_iter,
+            # )
+            # output_tokens[~(~skeptical_mask * initial_output_tokens_mask)] = batch_antibody['prev_tokens'][~(~skeptical_mask * initial_output_tokens_mask)]
+            if strategy == "mask_predict" and (step + 1) < max_iter:
+                skeptical_mask = _skeptical_unmasking(
+                    output_scores=output_scores,
+                    output_masks=initial_output_tokens_mask,
+                    p=1 - (step + 1) / max_iter,
+                )
+                output_tokens.masked_fill_(skeptical_mask, self.mask_idx)
+                output_scores.masked_fill_(skeptical_mask, 0.0)
+                batch_antibody["prev_token_mask"] = skeptical_mask
+
+            elif strategy == "random_mask_predict" and (step + 1) < max_iter:
+                random_mask = _random_unmasking(
+                    output_scores=output_scores,
+                    output_masks=initial_output_tokens_mask,
+                    p=0.5,
+                )
+                output_tokens.masked_fill_(random_mask, self.mask_idx)
+                output_scores.masked_fill_(random_mask, 0.0)
+                batch_antibody["prev_token_mask"] = random_mask
+            decoder_info["history"].append(output_tokens.clone())
+            batch_antibody["prev_tokens"] = output_tokens
+            prev_scores = output_scores
             # if need_attn_weights:
             #     attns.append(
             #         dict(
@@ -124,17 +156,16 @@ class IterativeRefinementGenerator:
             #         )
             #     ) TODO: add attention weights
 
-            decoder_info["history"].append(output_tokens.clone())
             decoder_info.update(step=step + 1)
-
+        batch_antibody["prev_token_mask"] = initial_output_tokens_mask
         if need_attn_weights:
             return output_tokens, output_scores, attns
-        return output_tokens, output_scores
+        return output_tokens, output_scores, decoder_info['history']
 
 
-def sample_from_categorical(logits=None, temperature=1.0):
+def sample_from_categorical(logits=None, temperature=1.0, prev_tokens=None, mask=None):
     if temperature:
-        dist = torch.distributions.Categorical(logits=logits.div(temperature))
+        dist = torch.distributions.Categorical(probs=logits.softmax(-1).div(temperature))
         tokens = dist.sample()
         scores = dist.log_prob(tokens)
     elif temperature is None or temperature == 0.0:

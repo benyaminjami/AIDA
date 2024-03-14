@@ -1,9 +1,5 @@
 import re
-from ast import literal_eval
-
 import anarci
-import numpy as np
-import pandas as pd
 import torch
 
 
@@ -55,5 +51,6 @@ def get_anarci_pos(batch):
 
 
 if __name__ == "__main__":
-    sequence = "AVQLQESGGGLVQAGGSLRLSCTVSARTSSSHDMGWFRQAPGKEREFVAAISWSGGTTNYVDSVKGRFDISKDNAKNAVYLQMNSLKPEDTAVYYCAAKWRPLRYSDNPSNSDYNYWGQGTQVTVSS"
+    sequence = """AVQLQESGGGLVQAGGSLRLSCTVSARTSSSHDMGWFRQAPGKEREFVAAISWSGGT
+        TNYVDSVKGRFDISKDNAKNAVYLQMNSLKPEDTAVYYCAAKWRPLRYSDNPSNSDYNYWGQGTQVTVSS""".replace('\n', '')
     print(get_anarci_pos(sequence))

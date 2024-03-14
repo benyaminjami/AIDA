@@ -1,9 +1,7 @@
-import os
 import warnings
 from importlib.util import find_spec
 from typing import Any, Callable, Dict, Optional, Tuple
 
-import hydra
 from omegaconf import DictConfig
 
 from src.utils import pylogger, rich_utils
@@ -67,7 +65,7 @@ def task_wrapper(task_func: Callable) -> Callable:
     def wrap(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         # execute the task
         try:
-            metric_dict, object_dict = task_func(cfg=cfg)
+            results = task_func(cfg=cfg)
 
         # things to do if exception occurs
         except Exception as ex:
@@ -92,7 +90,7 @@ def task_wrapper(task_func: Callable) -> Callable:
                     log.info("Closing wandb!")
                     wandb.finish()
 
-        return metric_dict, object_dict
+        return results
 
     return wrap
 
@@ -119,3 +117,18 @@ def get_metric_value(metric_dict: Dict[str, Any], metric_name: Optional[str]) ->
     log.info(f"Retrieved metric value! <{metric_name}={metric_value}>")
 
     return metric_value
+
+
+def dictoflist_to_listofdict(original_dict, opt=False):
+    if opt:
+        return [original_dict]
+    list_of_dicts = []
+
+    # Get the keys from the original dictionary
+    keys = original_dict.keys()
+
+    # Iterate over the lists and create dictionaries with the same keys
+    for values in zip(*original_dict.values()):
+        new_dict = dict(zip(keys, values))
+        list_of_dicts.append(new_dict)
+    return list_of_dicts

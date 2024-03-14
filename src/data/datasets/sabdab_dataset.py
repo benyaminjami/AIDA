@@ -16,7 +16,7 @@ def SAbDab(
     split="train",
     truncate=None,
     max_length=500,
-    alphabet="ACDEFGHIKLMNPQRSTVWY",
+    alphabet="ACDEFGHIKLMNPQRSTVWYX",
     verbose=False,
 ):
     alphabet_set = {a for a in alphabet}
@@ -44,35 +44,12 @@ def SAbDab(
                 continue
 
             select_antigen_chain(ag_entry)
+            check(ab_entry=ab_entry, ag_entry=ag_entry)
             if len(ag_entry["seqs"]) > max_length:
                 select_antigen_contact_range(ag_entry, max_length)
 
-            # Place the light chain after the heavy chain
-            for key in ["dists", "seqs", "position_ids", "weights"]:
-                ab_entry[key] = [ab_entry[key][1], ab_entry[key][0]]
-
             ab_seqs = ab_entry["seqs"]
             ag_seqs = ag_entry["seqs"]
-            assert (
-                len(ab_entry["weights"][0])
-                == len(ab_entry["seqs"][0])
-                == len(ab_entry["position_ids"][0])
-                == len(ab_entry["dists"][0])
-            ), "Mismatch length in Light chain"
-            assert (
-                len(ab_entry["weights"][1])
-                == len(ab_entry["seqs"][1])
-                == len(ab_entry["position_ids"][1])
-                == len(ab_entry["dists"][1])
-            ), "Mismatch length in Heavy chain"
-            assert (
-                len(ag_entry["seqs"])
-                == len(ag_entry["dists"])
-                == len(ag_entry["coords"]["N"])
-                == len(ag_entry["coords"]["CA"])
-                == len(ag_entry["coords"]["C"])
-                == len(ag_entry["coords"]["O"])
-            ), "Mismatch length in Antigen chain"
 
             # Convert raw coords to np arrays
             for key, val in ag_entry["coords"].items():
@@ -80,11 +57,16 @@ def SAbDab(
 
             # Check if in alphabet
             bad_chars = set(
-                [s for seq in ab_seqs for s in seq] + [s for seq in ag_seqs for s in seq]
+                [s for seq in ab_seqs for s in seq]
+                + [s for seq in ag_seqs for s in seq]
             ).difference(alphabet_set)
 
             if len(bad_chars) == 0:
-                if (ab_entry["pdb"], ab_entry["seqs"][1], ab_entry["seqs"][0]) in repeat_checker:
+                if (
+                    ab_entry["pdb"],
+                    ab_entry["seqs"][1],
+                    ab_entry["seqs"][0],
+                ) in repeat_checker:
                     discard_count["repeat"] += 1
                 elif (
                     len(ag_entry["seqs"]) <= max_length
@@ -111,7 +93,9 @@ def SAbDab(
                 break
         total_size = i
 
-        log.info(f"Loaded data size: {len(dataset)}/{total_size}. Discarded: {discard_count}.")
+        log.info(
+            f"Loaded data size: {len(dataset)}/{total_size}. Discarded: {discard_count}."
+        )
 
         return dataset, alphabet_set
 
@@ -125,6 +109,29 @@ def select_antigen_chain(entry):
         if key == "pdb":
             continue
         entry[key] = values[contacted_chain_idx]
+
+
+def check(ab_entry, ag_entry):
+    assert (
+        len(ab_entry["weights"][0])
+        == len(ab_entry["seqs"][0])
+        == len(ab_entry["position_ids"][0])
+        == len(ab_entry["dists"][0])
+    ), "Mismatch length in Light chain"
+    assert (
+        len(ab_entry["weights"][1])
+        == len(ab_entry["seqs"][1])
+        == len(ab_entry["position_ids"][1])
+        == len(ab_entry["dists"][1])
+    ), "Mismatch length in Heavy chain"
+    assert (
+        len(ag_entry["seqs"])
+        == len(ag_entry["dists"])
+        == len(ag_entry["coords"]["N"])
+        == len(ag_entry["coords"]["CA"])
+        == len(ag_entry["coords"]["C"])
+        == len(ag_entry["coords"]["O"])
+    ), "Mismatch length in Antigen chain"
 
 
 def select_antigen_contact_range(entry, max_len):
