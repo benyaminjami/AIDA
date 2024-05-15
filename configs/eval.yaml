@@ -28,58 +28,58 @@ extras:
 
 task:
   generator:
-    max_iter: 1
+    max_iter: 10
     # strategy: mask_predict
-    temperature: 0
+    n_samples: 100
+    temperature: 0.1
     tasks:
       full:
         name: full
         noise: full_mask
         contact: True
-      h1:
-        name: h1
-        noise: selected_mask
-        mask: h1
-        contact: True
-      h2:
-        name: h2
-        noise: selected_mask
-        mask: h2
-        contact: True
+      # h1:
+      #   name: h1
+      #   noise: selected_mask
+      #   mask: h1
+      #   contact: True
+      # h2:
+      #   name: h2
+      #   noise: selected_mask
+      #   mask: h2
+      #   contact: True
       h3:
         name: h3
         noise: selected_mask
         mask: h3
         contact: True
-      l1:
-        name: l1
-        noise: selected_mask
-        mask: l1
-        contact: True
-      l2:
-        name: l2
-        noise: selected_mask
-        mask: l2
-        contact: True
-      l3:
-        name: l3
-        noise: selected_mask
-        mask: l3
-        contact: True
+      # l1:
+      #   name: l1
+      #   noise: selected_mask
+      #   mask: l1
+      #   contact: True
+      # l2:
+      #   name: l2
+      #   noise: selected_mask
+      #   mask: l2
+      #   contact: True
+      # l3:
+      #   name: l3
+      #   noise: selected_mask
+      #   mask: l3
+      #   contact: True
       cdr:
         name: cdr
         noise: selected_mask
         mask: cdr_weights
         contact: True
 
-
+data:
+  max_tokens: 300 # set this to 300 for generating more than 1 sample
 
 task_name: "eval_cbalm_sundae"
 seed: 2023
 
 tags: ["dev"]
-data:
-  max_tokens: 3000
 
 # passing checkpoint path is necessary for evaluation
 ckpt_path: None

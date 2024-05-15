@@ -83,8 +83,8 @@ class GearNetcBALM(nn.Module):
             attention_mask=batch_antibody["attention_mask"],
             position_ids=batch_antibody["position_ids"],
             chain_ids=batch_antibody["chain_ids"],
-            antigen_feats=batch_antigen['feats'],
-            antigen_feats_mask=batch_antigen["feats_mask"],
+            antigen_feats=batch_antigen.get('feats', None),
+            antigen_feats_mask=batch_antigen.get("feats_mask", None),
         )["logits"]
 
         return esm_logits

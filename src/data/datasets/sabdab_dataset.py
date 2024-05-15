@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Dict, List
+from collections import defaultdict
 
 import numpy as np
 
@@ -167,6 +168,9 @@ def collate_fn(batch, antigen_featurizer, antibody_featurizer):
     antibodies = [b[0] for b in batch]
     antigens = [b[1] for b in batch]
     batched_antibody = antibody_featurizer(antibodies)
+    batched_antibody = defaultdict(lambda: None, batched_antibody)
     batched_antigen = antigen_featurizer(antigens)
+    batched_antigen = defaultdict(lambda: None, batched_antigen)
+    
     batch = {"antibody": batched_antibody, "antigen": batched_antigen}
     return batch

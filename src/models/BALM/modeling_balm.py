@@ -920,6 +920,7 @@ class BALMModel(BALMPreTrainedModel):
 
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
+        encoder_extended_attention_mask=None
         if self.config.is_decoder and encoder_hidden_states is not None:
             (
                 encoder_batch_size,
@@ -930,7 +931,7 @@ class BALMModel(BALMPreTrainedModel):
             if encoder_attention_mask is None:
                 encoder_attention_mask = torch.ones(encoder_hidden_shape, device=device)
             encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
-        else:
+        elif encoder_hidden_states is not None:
             encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
         # Prepare head mask if needed
         # 1.0 in head_mask indicate we keep the head

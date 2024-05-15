@@ -9,7 +9,7 @@ max_epochs: 10
 enable_progress_bar: true
 log_every_n_steps: 10
 
-accelerator: auto
+accelerator: gpu
 devices: 1
 
 # mixed precision for extra speed-up

@@ -40,10 +40,10 @@ class BALMWithStructuralAdatper(BALMForMaskedLM):
         del pretrained_model
 
         # freeze pretrained parameters
-        if cfg.freeze_pretrained:
-            for pname, param in model.named_parameters():
-                if all(name not in pname for name in cfg.unfreeze_layers):
-                    param.requires_grad = False
+        # if cfg.freeze_pretrained:
+        #     for pname, param in model.named_parameters():
+        #         if all(name not in pname for name in cfg.unfreeze_layers):
+        #             param.requires_grad = False
         return model
 
     def __init__(self, config, alphabet, mode):

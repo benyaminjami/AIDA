@@ -253,6 +253,7 @@ class SUNDAE(TaskLitModule):
             max_iter=self.hparams.generator.max_iter,
             strategy=self.hparams.generator.strategy,
             temperature=self.hparams.generator.temperature,
+            n_samples=self.hparams.generator.get('n_samples', 1),
         )
         if not return_ids:
             return self.alphabet_decoder.decode(output_tokens)
@@ -289,9 +290,20 @@ class SUNDAE(TaskLitModule):
                 return_ids=True,
             )
             if log_metrics:
+                tokens = batch["antibody"]["tokens"]
+                mask = batch["antibody"]["prev_token_mask"]
+                n_samples = self.hparams.generator.get('n_samples', 1)
+
+                if n_samples != 1:
+                    tokens = tokens.repeat(n_samples, 1)
+                    mask = mask.repeat(n_samples, 1)
+
                 recovery_acc_per_sample = metrics.accuracy_per_sample(
-                    pred_tokens, tokens, mask=batch["antibody"]["prev_token_mask"]
+                    pred_tokens, tokens, mask=mask
                 )
+                if n_samples != 1:
+                    recovery_acc_per_sample = [recovery_acc_per_sample.mean()]
+
                 self.metrics[dataloader_idx][f"{task}_acc_median"].update(
                     recovery_acc_per_sample
                 )
@@ -301,9 +313,14 @@ class SUNDAE(TaskLitModule):
                 )
                 if self.hparams.generator.tasks[task].get("contact", False):
                     contact_mask = batch["antibody"]["prev_token_mask"] & (batch["antibody"]["dists"] < 6.6)
+                    if n_samples != 1:
+                        contact_mask = contact_mask.repeat(n_samples, 1)
                     recovery_contact_acc_per_sample = metrics.accuracy_per_sample(
                         pred_tokens, tokens, mask=contact_mask
                     )
+                    if n_samples != 1:
+                        recovery_contact_acc_per_sample = [recovery_contact_acc_per_sample.mean()]
+
                     self.metrics[dataloader_idx][f"{task}_contact_acc"].update(
                         recovery_contact_acc_per_sample
                     )
@@ -360,7 +377,7 @@ class SUNDAE(TaskLitModule):
         if self.stage != "fit":
             self.save_prediction(
                 self.predict_outputs[0],
-                saveto=f"./test_tau{self.hparams.generator.max_iter}.json",
+                saveto=f"./test_iter_{self.hparams.generator.max_iter}_temp_{self.hparams.generator.temperature}.json",
             )
         return self.predict_outputs
 
@@ -377,7 +394,7 @@ class SUNDAE(TaskLitModule):
                     {
                         task: self.alphabet_decoder.decode(entry["pred_tokens"][task])
                         for task in entry["pred_tokens"]
-                    }, self.hparams.generator.get('optimize', False)
+                    }, self.hparams.generator.get('optimize', False) or self.hparams.generator.get('n_samples', 1) > 1
                 ),
                 self.alphabet_decoder.decode(entry["native"]),
                 dictoflist_to_listofdict(entry["recovery"]),

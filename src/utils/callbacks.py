@@ -410,7 +410,7 @@ def linear_lambda_func(x, const):
 
 
 class FineTuningFreezer(callbacks.BaseFinetuning):
-    def __init__(self, unfreeze_at_epoch=4, unfreeze_at_step=1000):
+    def __init__(self, unfreeze_at_epoch=4, unfreeze_at_step=1000, excluded_names=['crossattention', 'chain_embedding']):
         super().__init__()
         self._unfreeze_at_epoch = unfreeze_at_epoch
         self._unfreeze_at_step = unfreeze_at_step
